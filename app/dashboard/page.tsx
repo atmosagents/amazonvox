@@ -259,7 +259,7 @@ export default function DashboardPage() {
             `}</style>
 
             <Script
-                src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=visualization`}
+                src={`https://maps.googleapis.com/maps/api/js?key=AIzaSyBfJgYGDKPfWGbVnbnkipVFEgq12465cJk&libraries=visualization`}
                 async
                 defer
                 onReady={() => { initMap() }}
