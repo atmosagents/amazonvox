@@ -26,12 +26,16 @@ export default function DashboardPage() {
     const [showHeatmap, setShowHeatmap] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
 
+    // Search / Places State
+    const [isSearchOpen, setIsSearchOpen] = useState(false)
+    const searchInputRef = useRef<HTMLInputElement>(null)
+    const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
+
     // Data
     const [rawData, setRawData] = useState<any[]>([])
     const [filteredData, setFilteredData] = useState<any[]>([])
 
-    // Filters & Chips
-    // We'll use a simpler state for the chips to match the UI
+    // Filters
     const [filters, setFilters] = useState({
         candidate: '',
         gender: '',
@@ -51,8 +55,8 @@ export default function DashboardPage() {
     const markersRef = useRef<google.maps.Marker[]>([])
     const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
-    const C1_COLOR = '#3B4CCA' // Royal Blue (New Primary)
-    const C2_COLOR = '#10B981' // Emerald Green (New Secondary)
+    const C1_COLOR = '#3B4CCA' // Royal Blue
+    const C2_COLOR = '#10B981' // Emerald Green
 
     // -- EFFECTS --
 
@@ -78,7 +82,7 @@ export default function DashboardPage() {
         }
     }, [showHeatmap])
 
-    // -- LOAD DATA --
+    // -- DATA --
     const loadData = async () => {
         try {
             const response = await fetch('/api/voters')
@@ -113,21 +117,16 @@ export default function DashboardPage() {
     const updateKPIs = () => {
         const total = filteredData.length
         setTotalVotes(total)
-
         if (total === 0) {
             setLeader({ text: '-', percentage: 0, color: 'text-gray-600' })
             return
         }
-
         const c1Count = filteredData.filter(v => v.candidate_id === 1).length
         const c2Count = filteredData.filter(v => v.candidate_id === 2).length
-
         if (c1Count > c2Count) {
-            const pct = (c1Count / total) * 100
-            setLeader({ text: 'Azul', percentage: pct, color: 'text-[#3B4CCA]' })
+            setLeader({ text: 'Azul', percentage: (c1Count / total) * 100, color: 'text-[#3B4CCA]' })
         } else if (c2Count > c1Count) {
-            const pct = (c2Count / total) * 100
-            setLeader({ text: 'Verde', percentage: pct, color: 'text-[#10B981]' })
+            setLeader({ text: 'Verde', percentage: (c2Count / total) * 100, color: 'text-[#10B981]' })
         } else {
             setLeader({ text: 'Empate', percentage: 50, color: 'text-gray-600' })
         }
@@ -136,8 +135,6 @@ export default function DashboardPage() {
     const updateCharts = () => {
         const c1Count = filteredData.filter(v => v.candidate_id === 1).length
         const c2Count = filteredData.filter(v => v.candidate_id === 2).length
-
-        // Pie
         setChartData({
             labels: ['Azul', 'Verde'],
             datasets: [{
@@ -146,18 +143,13 @@ export default function DashboardPage() {
                 borderWidth: 0,
             }],
         })
-
-        // Bar (Sorted)
         const problems: Record<string, number> = {}
         filteredData.forEach(v => {
             const p = v.main_concern || 'Não informou'
             problems[p] = (problems[p] || 0) + 1
         })
-
-        // Sort by count descending
         const sortedLabels = Object.keys(problems).sort((a, b) => problems[b] - problems[a])
         const sortedData = sortedLabels.map(l => problems[l])
-
         setConcernsData({
             labels: sortedLabels,
             datasets: [{
@@ -195,21 +187,13 @@ export default function DashboardPage() {
 
         markersRef.current = filteredData.map(v => {
             const color = v.candidate_id === 1 ? C1_COLOR : C2_COLOR
-            const icon = {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 6,
-                fillColor: color,
-                fillOpacity: 1,
-                strokeWeight: 2,
-                strokeColor: 'white'
-            }
+            const icon = { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: 'white' }
             const marker = new google.maps.Marker({
                 position: { lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) },
                 icon: icon,
                 title: v.voter_name,
                 map: mapInstance.current
             })
-
             marker.addListener("click", () => {
                 if (!infoWindowRef.current || !mapInstance.current) return
                 const candName = v.candidate_id === 1 ? "Candidato Azul" : "Candidato Verde"
@@ -237,17 +221,53 @@ export default function DashboardPage() {
             })
             return marker
         })
-
         if (heatmapInstance.current) heatmapInstance.current.setMap(null)
         const heatData = filteredData.map(v => new google.maps.LatLng(parseFloat(v.latitude), parseFloat(v.longitude)))
-        heatmapInstance.current = new google.maps.visualization.HeatmapLayer({
-            data: heatData, radius: 30, opacity: 0.6
-        })
+        heatmapInstance.current = new google.maps.visualization.HeatmapLayer({ data: heatData, radius: 30, opacity: 0.6 })
         if (showHeatmap && mapInstance.current) heatmapInstance.current.setMap(mapInstance.current)
     }
 
     const toggleHeatmap = () => setShowHeatmap(p => !p)
     const handleFilter = (k: string, v: string) => setFilters(p => ({ ...p, [k]: v }))
+
+    // -- PLACES SEARCH --
+    const toggleSearch = (show: boolean) => {
+        setIsSearchOpen(show)
+        if (show) {
+            // Wait for render
+            setTimeout(() => {
+                if (searchInputRef.current) {
+                    searchInputRef.current.focus()
+                    initAutocomplete()
+                }
+            }, 100)
+        }
+    }
+
+    const initAutocomplete = () => {
+        if (!searchInputRef.current || !mapInstance.current || autocompleteRef.current) return
+
+        const options = {
+            fields: ["geometry", "name"],
+            strictBounds: false,
+        };
+
+        autocompleteRef.current = new google.maps.places.Autocomplete(searchInputRef.current, options);
+        autocompleteRef.current.bindTo("bounds", mapInstance.current);
+
+        autocompleteRef.current.addListener("place_changed", () => {
+            const place = autocompleteRef.current?.getPlace();
+            if (!place || !place.geometry || !place.geometry.location) {
+                return;
+            }
+            if (place.geometry.viewport) {
+                mapInstance.current?.fitBounds(place.geometry.viewport);
+            } else {
+                mapInstance.current?.setCenter(place.geometry.location);
+                mapInstance.current?.setZoom(15);
+            }
+        });
+    }
 
     return (
         <div className="bg-[#F8FAFC] dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 min-h-screen font-sans">
@@ -259,13 +279,12 @@ export default function DashboardPage() {
             `}</style>
 
             <Script
-                src={`https://maps.googleapis.com/maps/api/js?key=AIzaSyBfJgYGDKPfWGbVnbnkipVFEgq12465cJk&libraries=visualization`}
+                src={`https://maps.googleapis.com/maps/api/js?key=AIzaSyBfJgYGDKPfWGbVnbnkipVFEgq12465cJk&libraries=visualization,places`}
                 async
                 defer
                 onReady={() => { initMap() }}
             />
 
-            {/* HEADER */}
             <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-[#3B4CCA] rounded-lg flex items-center justify-center text-white font-bold text-xl">V</div>
@@ -279,15 +298,12 @@ export default function DashboardPage() {
                 </div>
             </header>
 
-            {/* TABS */}
             <div className="flex bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
                 <button onClick={() => setActiveTab('map')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'map' ? 'active-tab' : 'text-slate-400 dark:text-slate-500'}`}>Map View</button>
                 <button onClick={() => setActiveTab('crm')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'crm' ? 'active-tab' : 'text-slate-400 dark:text-slate-500'}`}>CRM List</button>
             </div>
 
-            {/* QUICK FILTERS CARD (Use actual states) */}
             <div className="p-4 overflow-x-auto no-scrollbar flex gap-2 whitespace-nowrap bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                {/* Selects styled as chips */}
                 <div className="relative inline-block">
                     <select value={filters.candidate} onChange={e => handleFilter('candidate', e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#3B4CCA]">
                         <option value="">Candidato: Todos</option>
@@ -329,11 +345,7 @@ export default function DashboardPage() {
             </div>
 
             <main className="p-4 pb-24 flex-grow overflow-hidden flex flex-col">
-
-                {/* --- MAP VIEW --- */}
                 <div className={`space-y-4 flex-col h-full overflow-y-auto ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
-
-                    {/* KPI CARDS */}
                     <div className="grid grid-cols-2 gap-3 shrink-0">
                         <div className="bg-white dark:bg-[#1E293B] p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Volume Filtrado</span>
@@ -357,18 +369,13 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* MAP CONTAINER */}
                     <div className="relative bg-white dark:bg-[#1E293B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden min-h-[400px] flex-grow">
                         <div ref={mapRef} id="map" className="w-full h-full absolute inset-0"></div>
-
-                        {/* Map Controls Overlay */}
                         <div className="absolute top-3 right-3 flex flex-col gap-2">
                             <button onClick={toggleHeatmap} className="w-8 h-8 bg-white dark:bg-slate-800 rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50 text-[#3B4CCA]">
                                 <span className="material-icons-outlined text-sm">layers</span>
                             </button>
                         </div>
-
-                        {/* Legend Overlay */}
                         <div className="absolute bottom-3 left-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur px-3 py-2 rounded-lg text-[10px] shadow-sm flex flex-col gap-1">
                             <div className="flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-[#3B4CCA]"></span>
@@ -381,9 +388,7 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
-                    {/* CHARTS ROW */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0 pb-10">
-                        {/* Donut Chart */}
                         <div className="bg-white dark:bg-[#1E293B] p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
                             <div className="w-24 h-24 shrink-0">
                                 {chartData && <Doughnut data={chartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%' }} />}
@@ -396,8 +401,6 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         </div>
-
-                        {/* Concerns Bar Chart */}
                         <div className="bg-white dark:bg-[#1E293B] p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
                             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Principais Dores</h3>
                             <div className="h-32 w-full">
@@ -407,23 +410,13 @@ export default function DashboardPage() {
                     </div>
                 </div>
 
-                {/* --- CRM VIEW (PREMIUM LIST) --- */}
                 <div className={`h-full overflow-hidden flex flex-col ${activeTab === 'crm' ? 'flex' : 'hidden'}`}>
-                    {/* Search Bar */}
                     <div className="shrink-0 mb-4 bg-white p-3 rounded-xl shadow-sm border border-gray-200 flex gap-2">
                         <div className="relative flex-1">
                             <span className="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-                            <input
-                                type="text"
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#3B4CCA]/20 outline-none text-slate-700"
-                                placeholder="Buscar eleitor..."
-                            />
+                            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#3B4CCA]/20 outline-none text-slate-700" placeholder="Buscar eleitor..." />
                         </div>
                     </div>
-
-                    {/* Table */}
                     <div className="flex-1 overflow-auto bg-white rounded-xl shadow-sm border border-gray-100 relative no-scrollbar">
                         <table className="min-w-full divide-y divide-slate-100">
                             <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
@@ -461,27 +454,43 @@ export default function DashboardPage() {
                         </table>
                     </div>
                 </div>
-
             </main>
 
-            {/* FLOATING ACTION BUTTON (Visual Only) */}
-            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-md pointer-events-none ${activeTab === 'map' ? 'block' : 'hidden'}`}>
-                <div className="bg-[#3B4CCA] text-white p-4 rounded-2xl shadow-xl flex items-center justify-between pointer-events-auto">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                            <span className="material-icons-outlined">search</span>
+            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40 ${activeTab === 'map' ? 'block' : 'hidden'}`}>
+                <div className="bg-[#3B4CCA] rounded-2xl shadow-2xl p-4 flex items-center justify-between transition-all duration-300 overflow-hidden">
+
+                    {!isSearchOpen ? (
+                        <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-4 text-white">
+                                <div className="bg-white/20 p-2 rounded-lg">
+                                    <span className="material-icons-outlined text-2xl">search</span>
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-bold opacity-75 uppercase tracking-wider">Ação Rápida</p>
+                                    <h3 className="font-bold text-lg leading-none">Pesquisar Região</h3>
+                                </div>
+                            </div>
+                            <button onClick={() => toggleSearch(true)} className="bg-white text-[#3B4CCA] hover:bg-indigo-50 px-6 py-2 rounded-lg font-bold text-sm shadow transition">
+                                ABRIR
+                            </button>
                         </div>
-                        <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider opacity-80 leading-none">Ação Rápida</p>
-                            <p className="font-bold text-sm">Pesquisar Região</p>
+                    ) : (
+                        <div className="w-full flex items-center gap-2">
+                            <span className="material-icons-outlined text-white text-xl animate-bounce">place</span>
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                placeholder="Digite uma cidade, bairro ou rua..."
+                                className="w-full bg-[#3B4CCA] text-white placeholder-indigo-200 border-none rounded-lg px-4 py-2 focus:ring-2 focus:ring-white outline-none transition"
+                            />
+
+                            <button onClick={() => toggleSearch(false)} className="text-indigo-200 hover:text-white p-2 rounded-full hover:bg-white/20 transition">
+                                <span className="material-icons-outlined text-2xl">close</span>
+                            </button>
                         </div>
-                    </div>
-                    <button className="bg-white text-[#3B4CCA] px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-50">
-                        ABRIR
-                    </button>
+                    )}
                 </div>
             </div>
-
         </div>
     )
 }
