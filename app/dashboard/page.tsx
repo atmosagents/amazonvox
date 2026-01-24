@@ -2,95 +2,91 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Script from 'next/script'
-import { Doughnut, Bar } from 'react-chartjs-2'
+import { Doughnut } from 'react-chartjs-2'
 import {
     Chart as ChartJS,
     ArcElement,
     Tooltip,
-    Legend,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    ActiveElement,
-    ChartEvent
+    Legend
 } from 'chart.js'
 
-ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement)
+ChartJS.register(ArcElement, Tooltip, Legend)
 
 export default function DashboardPage() {
-    const mapRef = useRef<HTMLDivElement>(null)
-
     // -- STATE --
     const [activeTab, setActiveTab] = useState<'map' | 'crm'>('map')
-    const [lastUpdate, setLastUpdate] = useState('Carregando...')
-    const [showHeatmap, setShowHeatmap] = useState(false)
-    const [searchTerm, setSearchTerm] = useState('')
+    const [lastUpdate, setLastUpdate] = useState('Conectando...')
+    const [darkMode, setDarkMode] = useState(false)
 
-    // Search / Places State
-    const [isSearchOpen, setIsSearchOpen] = useState(false)
-    const searchInputRef = useRef<HTMLInputElement>(null)
-    const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null)
-
-    // Data
+    // Data & Filters
     const [rawData, setRawData] = useState<any[]>([])
     const [filteredData, setFilteredData] = useState<any[]>([])
-
-    // Filters
     const [filters, setFilters] = useState({
         candidate: '',
         gender: '',
         age: '',
         concern: ''
     })
+    const [searchTerm, setSearchTerm] = useState('') // For CRM Search
 
-    // Visuals
+    // Visuals State
     const [totalVotes, setTotalVotes] = useState(0)
-    const [leader, setLeader] = useState({ text: 'Calculando...', percentage: 0, color: 'text-gray-600' })
+    const [leader, setLeader] = useState({ text: '--', color: 'text-slate-500', dominance: '--%' })
     const [chartData, setChartData] = useState<any>(null)
-    const [concernsData, setConcernsData] = useState<any>(null)
+    const [painPoints, setPainPoints] = useState<any[]>([])
 
-    // Maps Objects
+    // Map State
+    const mapRef = useRef<HTMLDivElement>(null)
     const mapInstance = useRef<google.maps.Map | null>(null)
     const heatmapInstance = useRef<google.maps.visualization.HeatmapLayer | null>(null)
     const markersRef = useRef<google.maps.Marker[]>([])
     const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
-    const C1_COLOR = '#3B4CCA' // Royal Blue
-    const C2_COLOR = '#10B981' // Emerald Green
+    // CRM Search
+    const [crmSearchTerm, setCrmSearchTerm] = useState('')
+
+    // Constants
+    const C1_COLOR = '#3B82F6' // Accent Blue
+    const C2_COLOR = '#10B981' // Accent Green
 
     // -- EFFECTS --
-
     useEffect(() => {
+        // Init Dark Mode
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            setDarkMode(true)
+        }
         loadData()
     }, [])
 
     useEffect(() => {
-        applyFilters()
-    }, [rawData, filters, searchTerm])
+        if (darkMode) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    }, [darkMode])
 
     useEffect(() => {
-        updateKPIs()
-        updateCharts()
+        applyFilters()
+    }, [rawData, filters])
+
+    useEffect(() => {
+        updateVisuals()
         if (mapInstance.current) {
             updateMap()
         }
     }, [filteredData])
 
-    useEffect(() => {
-        if (mapInstance.current) {
-            updateMap()
-        }
-    }, [showHeatmap])
-
-    // -- DATA --
+    // -- LOAD DATA --
     const loadData = async () => {
         try {
             const response = await fetch('/api/voters')
             const data = await response.json()
             setRawData(data)
-            setLastUpdate(new Date().toLocaleTimeString())
+            setLastUpdate("Atualizado: " + new Date().toLocaleTimeString())
         } catch (error) {
             console.error('Erro ao carregar dados:', error)
+            setLastUpdate("Erro na conexão")
         }
     }
 
@@ -101,38 +97,39 @@ export default function DashboardPage() {
         if (filters.gender) res = res.filter(v => v.voter_gender === filters.gender)
         if (filters.age) res = res.filter(v => v.voter_age_range === filters.age)
         if (filters.concern) res = res.filter(v => v.main_concern === filters.concern)
-        if (searchTerm) {
-            const lower = searchTerm.toLowerCase()
-            res = res.filter(v => v.voter_name?.toLowerCase().includes(lower) || v.voter_cpf?.includes(lower))
-        }
         setFilteredData(res)
     }
 
     const resetFilters = () => {
         setFilters({ candidate: '', gender: '', age: '', concern: '' })
-        setSearchTerm('')
     }
 
-    // -- VISUALS --
-    const updateKPIs = () => {
+    const handleFilterChange = (key: string, value: string) => {
+        setFilters(prev => ({ ...prev, [key]: value }))
+    }
+
+    // -- VISUALS UPDATE --
+    const updateVisuals = () => {
         const total = filteredData.length
         setTotalVotes(total)
-        if (total === 0) {
-            setLeader({ text: '-', percentage: 0, color: 'text-gray-600' })
-            return
-        }
-        const c1Count = filteredData.filter(v => v.candidate_id === 1).length
-        const c2Count = filteredData.filter(v => v.candidate_id === 2).length
-        if (c1Count > c2Count) {
-            setLeader({ text: 'Azul', percentage: (c1Count / total) * 100, color: 'text-[#3B4CCA]' })
-        } else if (c2Count > c1Count) {
-            setLeader({ text: 'Verde', percentage: (c2Count / total) * 100, color: 'text-[#10B981]' })
-        } else {
-            setLeader({ text: 'Empate', percentage: 50, color: 'text-gray-600' })
-        }
-    }
 
-    const updateCharts = () => {
+        // Leader
+        if (total === 0) {
+            setLeader({ text: '--', color: 'text-slate-500', dominance: 'Sem dados' })
+        } else {
+            const c1 = filteredData.filter(v => v.candidate_id === 1).length
+            const c2 = filteredData.filter(v => v.candidate_id === 2).length
+
+            if (c1 > c2) {
+                setLeader({ text: 'Azul', color: 'text-[#3B82F6]', dominance: `${((c1 / total) * 100).toFixed(0)}%` })
+            } else if (c2 > c1) {
+                setLeader({ text: 'Verde', color: 'text-[#10B981]', dominance: `${((c2 / total) * 100).toFixed(0)}%` })
+            } else {
+                setLeader({ text: 'Empate', color: 'text-slate-500', dominance: '50/50' })
+            }
+        }
+
+        // Chart
         const c1Count = filteredData.filter(v => v.candidate_id === 1).length
         const c2Count = filteredData.filter(v => v.candidate_id === 2).length
         setChartData({
@@ -143,139 +140,113 @@ export default function DashboardPage() {
                 borderWidth: 0,
             }],
         })
-        const problems: Record<string, number> = {}
-        filteredData.forEach(v => {
-            const p = v.main_concern || 'Não informou'
-            problems[p] = (problems[p] || 0) + 1
-        })
-        const sortedLabels = Object.keys(problems).sort((a, b) => problems[b] - problems[a])
-        const sortedData = sortedLabels.map(l => problems[l])
-        setConcernsData({
-            labels: sortedLabels,
-            datasets: [{
-                label: 'Votos',
-                data: sortedData,
-                backgroundColor: '#3B4CCA',
-                borderRadius: 4,
-                barThickness: 12
-            }]
-        })
+
+        // Pain Points
+        const counts: Record<string, number> = {}
+        filteredData.forEach(v => { const p = v.main_concern || 'Outros'; counts[p] = (counts[p] || 0) + 1 })
+        const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+        setPainPoints(sorted.map(([name, val]) => ({
+            name,
+            pct: total > 0 ? ((val / total) * 100).toFixed(0) : 0
+        })))
     }
 
-    // -- MAPS --
+    // -- MAP LOGIC --
     const initMap = async () => {
         if (!mapRef.current) return
         mapInstance.current = new google.maps.Map(mapRef.current, {
             zoom: 12,
             center: { lat: -23.1857, lng: -46.8978 },
-            mapId: 'DEMO_MAP_ID',
-            streetViewControl: false,
-            mapTypeControl: false,
-            fullscreenControl: false,
-            styles: [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
+            disableDefaultUI: true,
+            styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }]
         })
-        infoWindowRef.current = new google.maps.InfoWindow()
+        infoWindowRef.current = new google.maps.InfoWindow({ pixelOffset: new google.maps.Size(0, -10) })
         if (filteredData.length > 0) updateMap()
     }
 
     const updateMap = () => {
         if (!mapInstance.current) return
-        if (markersRef.current && markersRef.current.length > 0) {
-            markersRef.current.forEach(m => m.setMap(null))
-        }
-        markersRef.current = []
 
+        // Clear old
+        markersRef.current.forEach(m => m.setMap(null))
+        markersRef.current = []
+        if (heatmapInstance.current) heatmapInstance.current.setMap(null)
+
+        // Add Markers
         markersRef.current = filteredData.map(v => {
             const color = v.candidate_id === 1 ? C1_COLOR : C2_COLOR
-            const icon = { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: 'white' }
             const marker = new google.maps.Marker({
                 position: { lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) },
-                icon: icon,
-                title: v.voter_name,
-                map: mapInstance.current
+                map: mapInstance.current,
+                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: '#fff' }
             })
-            marker.addListener("click", () => {
-                if (!infoWindowRef.current || !mapInstance.current) return
-                const candName = v.candidate_id === 1 ? "Candidato Azul" : "Candidato Verde"
-                const candColor = v.candidate_id === 1 ? "text-[#3B4CCA]" : "text-[#10B981]"
-                let certText = "Indeciso", certBg = "bg-yellow-100 text-yellow-800"
-                if (v.vote_certainty >= 4) { certText = "Voto Firme"; certBg = "bg-purple-100 text-purple-800" }
 
-                const contentString = `
-                    <div class="p-1 min-w-[220px] font-sans">
-                        <h3 class="font-bold text-gray-900 text-base mb-1">${v.voter_name}</h3>
-                        <p class="text-xs text-gray-500 mb-3">CPF: ${v.voter_cpf}</p>
-                        <div class="flex justify-between items-center mb-2 text-sm">
-                            <span class="font-bold ${candColor}">${candName}</span>
-                            <span class="text-[10px] px-2 py-0.5 rounded ${certBg}">${certText}</span>
+            marker.addListener('click', () => {
+                if (!infoWindowRef.current || !mapInstance.current) return
+                const candName = v.candidate_id === 1 ? "Azul" : "Verde"
+                const colorText = v.candidate_id === 1 ? "text-blue-600" : "text-green-600"
+
+                const content = `
+                    <div class="p-2 font-sans min-w-[200px]">
+                        <div class="font-bold text-gray-800 mb-1 text-base">${v.voter_name}</div>
+                        <div class="text-xs text-gray-500 mb-2">Voto: <strong class="${colorText}">${candName}</strong></div>
+                        <div class="bg-gray-50 p-2 rounded border mb-2">
+                             <div class="text-[10px] text-gray-400 uppercase font-bold">Dor Principal</div>
+                             <div class="text-sm text-gray-700 font-medium">${v.main_concern || '-'}</div>
                         </div>
-                        <div class="bg-gray-50 p-2 rounded border border-gray-100 mb-3">
-                             <p class="text-xs text-gray-500 font-bold uppercase">Dor Principal</p>
-                             <p class="text-sm text-gray-800 font-bold">${v.main_concern || 'Não informou'}</p>
-                        </div>
-                        <a href="https://wa.me/55${v.voter_whatsapp}" target="_blank" class="block w-full text-center bg-[#10B981] text-white text-sm font-bold py-2 rounded transition">Chamar no Zap</a>
+                        <a href="https://wa.me/55${v.voter_whatsapp}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2 rounded hover:bg-green-600 transition" style="text-decoration:none; padding: 8px;">WHATSAPP</a>
                     </div>
                 `
-                infoWindowRef.current.setContent(contentString)
-                infoWindowRef.current.open({ anchor: marker, map: mapInstance.current, shouldFocus: false })
+                infoWindowRef.current.setContent(content)
+                infoWindowRef.current.open(mapInstance.current, marker)
             })
             return marker
         })
-        if (heatmapInstance.current) heatmapInstance.current.setMap(null)
-        const heatData = filteredData.map(v => new google.maps.LatLng(parseFloat(v.latitude), parseFloat(v.longitude)))
-        heatmapInstance.current = new google.maps.visualization.HeatmapLayer({ data: heatData, radius: 30, opacity: 0.6 })
-        if (showHeatmap && mapInstance.current) heatmapInstance.current.setMap(mapInstance.current)
     }
 
-    const toggleHeatmap = () => setShowHeatmap(p => !p)
-    const handleFilter = (k: string, v: string) => setFilters(p => ({ ...p, [k]: v }))
-
-    // -- PLACES SEARCH --
-    const toggleSearch = (show: boolean) => {
-        setIsSearchOpen(show)
-        if (show) {
-            // Wait for render
-            setTimeout(() => {
-                if (searchInputRef.current) {
-                    searchInputRef.current.focus()
-                    initAutocomplete()
-                }
-            }, 100)
+    const toggleHeatmap = () => {
+        if (!mapInstance.current) return
+        if (!heatmapInstance.current || heatmapInstance.current.getMap() === null) {
+            // Show Heatmap, Hide Markers
+            const heatData = filteredData.map(v => new google.maps.LatLng(parseFloat(v.latitude), parseFloat(v.longitude)))
+            heatmapInstance.current = new google.maps.visualization.HeatmapLayer({ data: heatData, radius: 30, opacity: 0.7, map: mapInstance.current })
+            markersRef.current.forEach(m => m.setMap(null))
+        } else {
+            // Hide Heatmap, Show Markers
+            heatmapInstance.current.setMap(null)
+            markersRef.current.forEach(m => m.setMap(mapInstance.current))
         }
     }
 
-    const initAutocomplete = () => {
-        if (!searchInputRef.current || !mapInstance.current || autocompleteRef.current) return
-
-        const options = {
-            fields: ["geometry", "name"],
-            strictBounds: false,
-        };
-
-        autocompleteRef.current = new google.maps.places.Autocomplete(searchInputRef.current, options);
-        autocompleteRef.current.bindTo("bounds", mapInstance.current);
-
-        autocompleteRef.current.addListener("place_changed", () => {
-            const place = autocompleteRef.current?.getPlace();
-            if (!place || !place.geometry || !place.geometry.location) {
-                return;
-            }
-            if (place.geometry.viewport) {
-                mapInstance.current?.fitBounds(place.geometry.viewport);
-            } else {
-                mapInstance.current?.setCenter(place.geometry.location);
-                mapInstance.current?.setZoom(15);
-            }
-        });
-    }
+    // -- CRM helpers --
+    // We filter the filteredData further by search term for the list view
+    const crmData = filteredData.filter(v => {
+        if (!crmSearchTerm) return true
+        const lower = crmSearchTerm.toLowerCase()
+        return v.voter_name?.toLowerCase().includes(lower) || v.voter_cpf?.includes(lower)
+    })
 
     return (
-        <div className="bg-[#F8FAFC] dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 min-h-screen font-sans">
+        <div className="bg-[#F8FAFC] dark:bg-[#0F172A] font-sans text-slate-800 dark:text-slate-100 transition-colors duration-300 h-screen overflow-hidden flex flex-col">
             <style jsx global>{`
-                @import url('https://fonts.googleapis.com/css2?family=Material+Icons+Outlined&display=swap');
-                .no-scrollbar::-webkit-scrollbar { display: none; }
-                .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-                .active-tab { border-bottom: 2px solid #3B4CCA; color: #3B4CCA; }
+                @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+                @import url('https://fonts.googleapis.com/icon?family=Material+Icons+Round');
+                
+                /* Custom Classes from Mockup */
+                .glass-card {
+                    background: rgba(255, 255, 255, 0.7);
+                    backdrop-filter: blur(12px);
+                    -webkit-backdrop-filter: blur(12px);
+                    border: 1px solid rgba(255, 255, 255, 0.3)
+                }
+                .dark .glass-card {
+                    background: rgba(30, 41, 59, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1)
+                }
+                .sidebar-scroll::-webkit-scrollbar { width: 6px }
+                .sidebar-scroll::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 10px }
+                .dark .sidebar-scroll::-webkit-scrollbar-thumb { background: #334155 }
+                .chart-container { position: relative; height: 180px; width: 100%; display: flex; justify-content: center; }
             `}</style>
 
             <Script
@@ -285,212 +256,238 @@ export default function DashboardPage() {
                 onReady={() => { initMap() }}
             />
 
-            <header className="sticky top-0 z-50 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-[#3B4CCA] rounded-lg flex items-center justify-center text-white font-bold text-xl">V</div>
-                    <h1 className="font-bold text-lg tracking-tight">VoxGeo <span className="text-[#3B4CCA] font-medium">War Room</span></h1>
+            {/* HEADER */}
+            <header className="h-16 px-6 bg-[#1E1B4B] flex items-center justify-between shadow-2xl shrink-0 z-50">
+                <div className="flex items-center space-x-2">
+                    <span className="text-white font-bold text-xl tracking-tight">Vox<span className="text-[#3B82F6]">Geo</span></span>
+                    <span className="text-slate-400 font-light border-l border-slate-700 pl-3 ml-1">War Room</span>
                 </div>
-                <div className="flex items-center gap-3">
-                    <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 dark:text-slate-500">{lastUpdate}</span>
-                    <button className="p-2 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center">
-                        <span className="material-icons-outlined text-sm">tune</span>
+                <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-3 bg-white/5 px-4 py-2 rounded-lg border border-white/10">
+                        <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
+                        <span className="text-white/80 text-xs font-medium">{lastUpdate}</span>
+                    </div>
+                    <button className="text-white/70 hover:text-white p-2 transition" onClick={() => setDarkMode(!darkMode)}>
+                        <span className="material-icons-round">{darkMode ? 'light_mode' : 'dark_mode'}</span>
                     </button>
                 </div>
             </header>
 
-            <div className="flex bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                <button onClick={() => setActiveTab('map')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'map' ? 'active-tab' : 'text-slate-400 dark:text-slate-500'}`}>Map View</button>
-                <button onClick={() => setActiveTab('crm')} className={`flex-1 py-3 text-sm font-semibold transition-all ${activeTab === 'crm' ? 'active-tab' : 'text-slate-400 dark:text-slate-500'}`}>CRM List</button>
-            </div>
-
-            <div className="p-4 overflow-x-auto no-scrollbar flex gap-2 whitespace-nowrap bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-                <div className="relative inline-block">
-                    <select value={filters.candidate} onChange={e => handleFilter('candidate', e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#3B4CCA]">
-                        <option value="">Candidato: Todos</option>
+            {/* FILTERS BAR */}
+            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 grid grid-cols-2 md:grid-cols-5 gap-4 shadow-sm shrink-0 z-40">
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Candidato</label>
+                    <select value={filters.candidate} onChange={e => handleFilterChange('candidate', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                        <option value="">Todos</option>
                         <option value="1">Candidato Azul</option>
                         <option value="2">Candidato Verde</option>
                     </select>
-                    <span className="material-icons-outlined text-[14px] absolute right-2 top-1.5 pointer-events-none text-slate-500">expand_more</span>
                 </div>
-                <div className="relative inline-block">
-                    <select value={filters.gender} onChange={e => handleFilter('gender', e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#3B4CCA]">
-                        <option value="">Gênero: Todos</option>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Gênero</label>
+                    <select value={filters.gender} onChange={e => handleFilterChange('gender', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                        <option value="">Todos</option>
                         <option value="F">Feminino</option>
                         <option value="M">Masculino</option>
                     </select>
-                    <span className="material-icons-outlined text-[14px] absolute right-2 top-1.5 pointer-events-none text-slate-500">expand_more</span>
                 </div>
-                <div className="relative inline-block">
-                    <select value={filters.age} onChange={e => handleFilter('age', e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#3B4CCA]">
-                        <option value="">Faixa Etária: Todas</option>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Faixa Etária</label>
+                    <select value={filters.age} onChange={e => handleFilterChange('age', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                        <option value="">Todas</option>
                         <option value="16-24">16-24</option>
                         <option value="25-44">25-44</option>
                         <option value="45-59">45-59</option>
                         <option value="60+">60+</option>
                     </select>
-                    <span className="material-icons-outlined text-[14px] absolute right-2 top-1.5 pointer-events-none text-slate-500">expand_more</span>
                 </div>
-                <div className="relative inline-block">
-                    <select value={filters.concern} onChange={e => handleFilter('concern', e.target.value)} className="appearance-none pl-3 pr-8 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-full text-xs font-medium focus:outline-none focus:ring-1 focus:ring-[#3B4CCA]">
-                        <option value="">Dor: Todas</option>
+                <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Principal Dor</label>
+                    <select value={filters.concern} onChange={e => handleFilterChange('concern', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                        <option value="">Todas</option>
                         <option value="Seguranca">Segurança</option>
                         <option value="Saude">Saúde</option>
                         <option value="Educacao">Educação</option>
-                        <option value="Infraestrutura">Asfalto</option>
+                        <option value="Infraestrutura">Infraestrutura</option>
                         <option value="Emprego">Emprego</option>
                     </select>
-                    <span className="material-icons-outlined text-[14px] absolute right-2 top-1.5 pointer-events-none text-slate-500">expand_more</span>
                 </div>
-                <button onClick={resetFilters} className="px-3 py-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-full text-xs font-bold transition">Limpar</button>
+                <div className="flex items-end">
+                    <button onClick={resetFilters} className="w-full h-[34px] flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors text-xs font-semibold">
+                        <span className="material-icons-round text-sm">filter_alt_off</span>
+                        <span>Limpar</span>
+                    </button>
+                </div>
             </div>
 
-            <main className="p-4 pb-24 flex-grow overflow-hidden flex flex-col">
-                <div className={`space-y-4 flex-col h-full overflow-y-auto ${activeTab === 'map' ? 'flex' : 'hidden'}`}>
-                    <div className="grid grid-cols-2 gap-3 shrink-0">
-                        <div className="bg-white dark:bg-[#1E293B] p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Volume Filtrado</span>
-                            <div className="flex items-baseline gap-1">
-                                <span className="text-3xl font-bold">{totalVotes}</span>
-                                <span className="text-xs text-slate-400">votos</span>
+            <main className="flex flex-1 overflow-hidden relative">
+
+                {/* SIDEBAR */}
+                <aside className="w-[340px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-30 shadow-xl shrink-0">
+                    <div className="px-4 pt-4 shrink-0">
+                        <div className="flex border-b border-slate-100 dark:border-slate-800">
+                            <button
+                                onClick={() => setActiveTab('map')}
+                                className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'map' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}
+                            >Map View</button>
+                            {/* CRM List made clickable */}
+                            <button
+                                onClick={() => setActiveTab('crm')}
+                                className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'crm' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}
+                            >CRM List</button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto sidebar-scroll p-4 space-y-4">
+                        {/* KPIs */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#3B82F6]">
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Volume</p>
+                                <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-100">{totalVotes}</p>
+                                <p className="text-[10px] text-slate-500">Filtrados</p>
                             </div>
-                            <div className="mt-3 w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                <div className="h-full bg-[#3B4CCA]" style={{ width: '100%' }}></div>
+                            <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#10B981]">
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Líder</p>
+                                <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{leader.text}</p>
+                                <p className="text-[10px] text-slate-500">Dominância: {leader.dominance}</p>
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#1E293B] p-4 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Líder (Seleção)</span>
-                            <div className="flex items-baseline gap-1">
-                                <span className={`text-2xl font-bold truncate ${leader.color}`}>{leader.text}</span>
-                                <span className={`text-sm font-semibold ${leader.color}`}>({leader.percentage.toFixed(0)}%)</span>
+
+                        {/* CHART */}
+                        <div className="glass-card p-5 rounded-xl shadow-sm">
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Distribuição</p>
+                            <div className="chart-container">
+                                {chartData && <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }} />}
                             </div>
-                            <div className="mt-3 w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                <div className={`h-full ${leader.text === 'Azul' ? 'bg-[#3B4CCA]' : leader.text === 'Verde' ? 'bg-[#10B981]' : 'bg-gray-400'}`} style={{ width: `${leader.percentage}%` }}></div>
+                        </div>
+
+                        {/* PAIN POINTS */}
+                        <div className="glass-card p-5 rounded-xl shadow-sm">
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Dores da Região</p>
+                            <div className="space-y-4">
+                                {painPoints.length === 0 ? (
+                                    <p className="text-xs text-slate-400 text-center">Sem dados.</p>
+                                ) : (
+                                    painPoints.map((item, i) => {
+                                        const gradients = ['from-blue-500 to-indigo-600', 'from-emerald-400 to-emerald-600', 'from-amber-400 to-orange-500']
+                                        const grad = gradients[i % gradients.length]
+                                        return (
+                                            <div key={item.name}>
+                                                <div className="flex justify-between text-xs mb-1 dark:text-slate-300">
+                                                    <span className="font-medium text-slate-700 dark:text-slate-300">{item.name}</span>
+                                                    <span className="text-slate-500">{item.pct}%</span>
+                                                </div>
+                                                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                                    <div className={`h-full bg-gradient-to-r ${grad}`} style={{ width: `${item.pct}%` }}></div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    <div className="relative bg-white dark:bg-[#1E293B] rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden min-h-[400px] flex-grow">
-                        <div ref={mapRef} id="map" className="w-full h-full absolute inset-0"></div>
-                        <div className="absolute top-3 right-3 flex flex-col gap-2">
-                            <button onClick={toggleHeatmap} className="w-8 h-8 bg-white dark:bg-slate-800 rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50 text-[#3B4CCA]">
-                                <span className="material-icons-outlined text-sm">layers</span>
-                            </button>
-                        </div>
-                        <div className="absolute bottom-3 left-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur px-3 py-2 rounded-lg text-[10px] shadow-sm flex flex-col gap-1">
-                            <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-[#3B4CCA]"></span>
-                                <span className="font-medium">Candidato Azul</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>
-                                <span className="font-medium">Candidato Verde</span>
-                            </div>
-                        </div>
+                    <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                        <button onClick={() => window.print()} className="w-full flex items-center justify-center space-x-2 bg-[#4F46E5] hover:bg-slate-700 text-white py-3 rounded-xl font-semibold transition-all">
+                            <span className="material-icons-round text-sm">print</span>
+                            <span>Relatório</span>
+                        </button>
                     </div>
+                </aside>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 shrink-0 pb-10">
-                        <div className="bg-white dark:bg-[#1E293B] p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-4">
-                            <div className="w-24 h-24 shrink-0">
-                                {chartData && <Doughnut data={chartData} options={{ maintainAspectRatio: false, plugins: { legend: { display: false } }, cutout: '70%' }} />}
+                {/* CONTENT AREA (MAP or CRM) */}
+                <div className="flex-1 relative bg-slate-200 dark:bg-slate-800">
+
+                    {/* MAP VIEW */}
+                    <div className={`w-full h-full relative ${activeTab === 'map' ? 'block' : 'hidden'}`}>
+                        <div ref={mapRef} id="map" className="w-full h-full"></div>
+
+                        {/* Map Controls */}
+                        <div className="absolute top-6 left-6 space-y-2 z-10">
+                            <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl shadow-xl flex flex-col space-y-1">
+                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) + 1)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><span className="material-icons-round">add</span></button>
+                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) - 1)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><span className="material-icons-round">remove</span></button>
+                                <div className="h-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
+                                <button onClick={toggleHeatmap} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg group text-slate-600 dark:text-slate-300 group-hover:text-red-500"><span className="material-icons-round">local_fire_department</span></button>
                             </div>
-                            <div>
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Distribuição</h3>
-                                <div className="space-y-1">
-                                    <div className="flex items-center gap-2 text-xs font-medium"><span className="w-2 h-2 rounded-full bg-[#3B4CCA]"></span> Azul</div>
-                                    <div className="flex items-center gap-2 text-xs font-medium"><span className="w-2 h-2 rounded-full bg-[#10B981]"></span> Verde</div>
+                        </div>
+
+                        {/* Legend */}
+                        <div className="absolute bottom-6 left-6 z-10">
+                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-white dark:border-slate-800 space-y-3 min-w-[180px]">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 mb-2">Legenda</p>
+                                <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleFilterChange('candidate', '1')}>
+                                    <span className="w-3 h-3 rounded-full bg-[#3B82F6] shadow-sm"></span>
+                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Candidato Azul</span>
+                                </div>
+                                <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleFilterChange('candidate', '2')}>
+                                    <span className="w-3 h-3 rounded-full bg-[#10B981] shadow-sm"></span>
+                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Candidato Verde</span>
                                 </div>
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#1E293B] p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Principais Dores</h3>
-                            <div className="h-32 w-full">
-                                {concernsData && <Bar data={concernsData} options={{ maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { grid: { display: false }, ticks: { font: { size: 10 } } } } }} />}
+                    </div>
+
+                    {/* CRM VIEW (Integrated Table) */}
+                    <div className={`w-full h-full flex flex-col p-6 overflow-hidden ${activeTab === 'crm' ? 'flex' : 'hidden'}`}>
+                        <div className="shrink-0 mb-4 bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex gap-2">
+                            <div className="relative flex-1">
+                                <span className="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                                <input
+                                    type="text"
+                                    value={crmSearchTerm}
+                                    onChange={(e) => setCrmSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#4F46E5]/20 outline-none text-slate-700 dark:text-slate-200"
+                                    placeholder="Buscar eleitor na lista..."
+                                />
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <div className={`h-full overflow-hidden flex flex-col ${activeTab === 'crm' ? 'flex' : 'hidden'}`}>
-                    <div className="shrink-0 mb-4 bg-white p-3 rounded-xl shadow-sm border border-gray-200 flex gap-2">
-                        <div className="relative flex-1">
-                            <span className="material-icons-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-                            <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#3B4CCA]/20 outline-none text-slate-700" placeholder="Buscar eleitor..." />
+                        <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 relative no-scrollbar">
+                            <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
+                                <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Eleitor</th>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perfil</th>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dor</th>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voto</th>
+                                        <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                    {crmData.length === 0 ? (
+                                        <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nenhum eleitor encontrado.</td></tr>
+                                    ) : (
+                                        crmData.map(v => (
+                                            <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                                                <td className="px-4 py-3">
+                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{v.voter_name}</div>
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <div className="text-xs text-slate-500">{v.voter_gender} • {v.voter_age_range}</div>
+                                                </td>
+                                                <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-400">{v.main_concern}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className={`text-xs font-bold ${v.candidate_id === 1 ? 'text-[#3B82F6]' : 'text-[#10B981]'}`}>{v.candidate_id === 1 ? 'Azul' : 'Verde'}</span>
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                    {v.voter_whatsapp && (
+                                                        <a href={`https://wa.me/55${v.voter_whatsapp}`} target="_blank" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400">
+                                                            <span className="material-icons-round text-sm">chat</span>
+                                                        </a>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-auto bg-white rounded-xl shadow-sm border border-gray-100 relative no-scrollbar">
-                        <table className="min-w-full divide-y divide-slate-100">
-                            <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
-                                <tr>
-                                    <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Eleitor</th>
-                                    <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perfil</th>
-                                    <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dor</th>
-                                    <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voto</th>
-                                    <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ação</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {filteredData.map(v => (
-                                    <tr key={v.id} className="hover:bg-slate-50 transition">
-                                        <td className="px-4 py-3">
-                                            <div className="text-sm font-semibold text-slate-800">{v.voter_name}</div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="text-xs text-slate-500">{v.voter_gender} • {v.voter_age_range}</div>
-                                        </td>
-                                        <td className="px-4 py-3 text-xs font-medium text-slate-600">{v.main_concern}</td>
-                                        <td className="px-4 py-3">
-                                            <span className={`text-xs font-bold ${v.candidate_id === 1 ? 'text-[#3B4CCA]' : 'text-[#10B981]'}`}>{v.candidate_id === 1 ? 'Azul' : 'Verde'}</span>
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            {v.voter_whatsapp && (
-                                                <a href={`https://wa.me/55${v.voter_whatsapp}`} target="_blank" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-50 text-green-600 hover:bg-green-100">
-                                                    <span className="material-icons-outlined text-sm">chat</span>
-                                                </a>
-                                            )}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+
                 </div>
             </main>
-
-            <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40 ${activeTab === 'map' ? 'block' : 'hidden'}`}>
-                <div className="bg-[#3B4CCA] rounded-2xl shadow-2xl p-4 flex items-center justify-between transition-all duration-300 overflow-hidden">
-
-                    {!isSearchOpen ? (
-                        <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-4 text-white">
-                                <div className="bg-white/20 p-2 rounded-lg">
-                                    <span className="material-icons-outlined text-2xl">search</span>
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-bold opacity-75 uppercase tracking-wider">Ação Rápida</p>
-                                    <h3 className="font-bold text-lg leading-none">Pesquisar Região</h3>
-                                </div>
-                            </div>
-                            <button onClick={() => toggleSearch(true)} className="bg-white text-[#3B4CCA] hover:bg-indigo-50 px-6 py-2 rounded-lg font-bold text-sm shadow transition">
-                                ABRIR
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="w-full flex items-center gap-2">
-                            <span className="material-icons-outlined text-white text-xl animate-bounce">place</span>
-                            <input
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Digite uma cidade, bairro ou rua..."
-                                className="w-full bg-[#3B4CCA] text-white placeholder-indigo-200 border-none rounded-lg px-4 py-2 focus:ring-2 focus:ring-white outline-none transition"
-                            />
-
-                            <button onClick={() => toggleSearch(false)} className="text-indigo-200 hover:text-white p-2 rounded-full hover:bg-white/20 transition">
-                                <span className="material-icons-outlined text-2xl">close</span>
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
         </div>
     )
 }
