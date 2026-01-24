@@ -58,6 +58,8 @@ export async function POST(request: Request) {
                     voter_whatsapp: whatsapp,
                     voter_gender: gender,
                     voter_age_range: age,
+                    voter_education: formData.get('voter_education')?.toString() || null,
+                    voter_income: formData.get('voter_income')?.toString() || null,
                     main_concern: concern,
                     vote_certainty: certainty,
                     is_volunteer: is_volunteer

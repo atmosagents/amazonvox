@@ -25,7 +25,9 @@ export default function DashboardPage() {
         candidate: '',
         gender: '',
         age: '',
-        concern: ''
+        concern: '',
+        education: '',
+        income: ''
     })
     const [searchTerm, setSearchTerm] = useState('') // For CRM Search
 
@@ -97,11 +99,13 @@ export default function DashboardPage() {
         if (filters.gender) res = res.filter(v => v.voter_gender === filters.gender)
         if (filters.age) res = res.filter(v => v.voter_age_range === filters.age)
         if (filters.concern) res = res.filter(v => v.main_concern === filters.concern)
+        if (filters.education) res = res.filter(v => v.voter_education && v.voter_education.includes(filters.education))
+        if (filters.income) res = res.filter(v => v.voter_income && v.voter_income.includes(filters.income))
         setFilteredData(res)
     }
 
     const resetFilters = () => {
-        setFilters({ candidate: '', gender: '', age: '', concern: '' })
+        setFilters({ candidate: '', gender: '', age: '', concern: '', education: '', income: '' })
     }
 
     const handleFilterChange = (key: string, value: string) => {
@@ -187,14 +191,36 @@ export default function DashboardPage() {
                 const colorText = v.candidate_id === 1 ? "text-blue-600" : "text-green-600"
 
                 const content = `
-                    <div class="p-2 font-sans min-w-[200px]">
-                        <div class="font-bold text-gray-800 mb-1 text-base">${v.voter_name}</div>
-                        <div class="text-xs text-gray-500 mb-2">Voto: <strong class="${colorText}">${candName}</strong></div>
-                        <div class="bg-gray-50 p-2 rounded border mb-2">
-                             <div class="text-[10px] text-gray-400 uppercase font-bold">Dor Principal</div>
-                             <div class="text-sm text-gray-700 font-medium">${v.main_concern || '-'}</div>
+                    <div class="p-2 font-sans min-w-[220px]">
+                        <div class="font-bold text-gray-800 mb-1 flex justify-between">
+                            <span>${v.voter_name}</span>
+                            <span class="text-[10px] bg-gray-100 px-1 rounded flex items-center">${v.voter_age_range || ''}</span>
                         </div>
-                        <a href="https://wa.me/55${v.voter_whatsapp}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2 rounded hover:bg-green-600 transition" style="text-decoration:none; padding: 8px;">WHATSAPP</a>
+                        
+                        <div class="text-xs text-gray-500 mb-2 border-b pb-2">
+                            Voto: <strong class="${colorText}">${candName}</strong>
+                            <span class="ml-2 text-[10px] text-gray-400">(${v.vote_certainty >= 4 ? 'Firme' : 'Indeciso'})</span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 mb-2 text-[10px] text-gray-600">
+                            <div class="bg-slate-50 p-1.5 rounded">
+                                <span class="block font-bold text-gray-400 uppercase text-[9px]">Escolaridade</span>
+                                ${v.voter_education || '-'}
+                            </div>
+                            <div class="bg-slate-50 p-1.5 rounded">
+                                <span class="block font-bold text-gray-400 uppercase text-[9px]">Renda</span>
+                                ${v.voter_income || '-'}
+                            </div>
+                        </div>
+
+                        <div class="bg-red-50 p-1.5 rounded border border-red-100 mb-2">
+                             <div class="text-[9px] text-red-400 uppercase font-bold">Principal Dor</div>
+                             <div class="text-xs font-medium text-red-700">${v.main_concern || 'Não informou'}</div>
+                        </div>
+
+                        <a href="https://wa.me/55${v.voter_whatsapp}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2 rounded hover:bg-green-600 transition flex items-center justify-center gap-1" style="text-decoration:none; padding: 8px;">
+                            <span class="material-icons-round text-sm">whatsapp</span> CHAMAR
+                        </a>
                     </div>
                 `
                 infoWindowRef.current.setContent(content)
@@ -274,49 +300,70 @@ export default function DashboardPage() {
             </header>
 
             {/* FILTERS BAR */}
-            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 grid grid-cols-2 md:grid-cols-5 gap-4 shadow-sm shrink-0 z-40">
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Candidato</label>
-                    <select value={filters.candidate} onChange={e => handleFilterChange('candidate', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                        <option value="">Todos</option>
-                        <option value="1">Candidato Azul</option>
-                        <option value="2">Candidato Verde</option>
-                    </select>
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Gênero</label>
-                    <select value={filters.gender} onChange={e => handleFilterChange('gender', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                        <option value="">Todos</option>
-                        <option value="F">Feminino</option>
-                        <option value="M">Masculino</option>
-                    </select>
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Faixa Etária</label>
-                    <select value={filters.age} onChange={e => handleFilterChange('age', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                        <option value="">Todas</option>
-                        <option value="16-24">16-24</option>
-                        <option value="25-44">25-44</option>
-                        <option value="45-59">45-59</option>
-                        <option value="60+">60+</option>
-                    </select>
-                </div>
-                <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Principal Dor</label>
-                    <select value={filters.concern} onChange={e => handleFilterChange('concern', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                        <option value="">Todas</option>
-                        <option value="Seguranca">Segurança</option>
-                        <option value="Saude">Saúde</option>
-                        <option value="Educacao">Educação</option>
-                        <option value="Infraestrutura">Infraestrutura</option>
-                        <option value="Emprego">Emprego</option>
-                    </select>
-                </div>
-                <div className="flex items-end">
-                    <button onClick={resetFilters} className="w-full h-[34px] flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors text-xs font-semibold">
-                        <span className="material-icons-round text-sm">filter_alt_off</span>
-                        <span>Limpar</span>
-                    </button>
+            <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 shadow-sm shrink-0 z-40">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Candidato</label>
+                        <select value={filters.candidate} onChange={e => handleFilterChange('candidate', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todos</option>
+                            <option value="1">Candidato Azul</option>
+                            <option value="2">Candidato Verde</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Gênero</label>
+                        <select value={filters.gender} onChange={e => handleFilterChange('gender', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todos</option>
+                            <option value="F">Feminino</option>
+                            <option value="M">Masculino</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Idade</label>
+                        <select value={filters.age} onChange={e => handleFilterChange('age', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todas</option>
+                            <option value="16-24">16-24</option>
+                            <option value="25-44">25-44</option>
+                            <option value="45-59">45-59</option>
+                            <option value="60+">60+</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Escolaridade</label>
+                        <select value={filters.education || ''} onChange={e => handleFilterChange('education', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todas</option>
+                            <option value="Fundamental">Fundamental</option>
+                            <option value="Medio">Médio</option>
+                            <option value="Superior">Superior</option>
+                            <option value="Pos">Pós-Graduação</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Renda</label>
+                        <select value={filters.income || ''} onChange={e => handleFilterChange('income', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todas</option>
+                            <option value="Ate 1 SM">Até 1 SM</option>
+                            <option value="1 a 3 SM">1-3 SM</option>
+                            <option value="Acima de 10 SM">Alta Renda (&gt;10)</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Dor</label>
+                        <select value={filters.concern} onChange={e => handleFilterChange('concern', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
+                            <option value="">Todas</option>
+                            <option value="Seguranca">Segurança</option>
+                            <option value="Saude">Saúde</option>
+                            <option value="Educacao">Educação</option>
+                            <option value="Infraestrutura">Infraestrutura</option>
+                            <option value="Emprego">Emprego</option>
+                        </select>
+                    </div>
+                    <div className="flex items-end">
+                        <button onClick={resetFilters} className="w-full h-[34px] flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors text-xs font-semibold">
+                            <span className="material-icons-round text-sm">filter_alt_off</span>
+                            <span>Limpar</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 

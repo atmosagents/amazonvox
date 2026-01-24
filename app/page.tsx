@@ -17,6 +17,8 @@ export default function VotePage() {
   const [concern, setConcern] = useState('')
   const [certainty, setCertainty] = useState(3)
   const [isVolunteer, setIsVolunteer] = useState(false)
+  const [education, setEducation] = useState('')
+  const [income, setIncome] = useState('')
 
   // -- HANDLERS --
   const handleCpfChange = (val: string) => {
@@ -67,6 +69,8 @@ export default function VotePage() {
         formData.append('voter_age_range', ageRange)
         formData.append('main_concern', concern)
         formData.append('vote_certainty', certainty.toString())
+        formData.append('voter_education', education)
+        formData.append('voter_income', income)
         if (isVolunteer) formData.append('is_volunteer', 'on')
 
         try {
@@ -89,6 +93,8 @@ export default function VotePage() {
             setConcern('')
             setGender('')
             setAgeRange('')
+            setEducation('')
+            setIncome('')
           } else {
             alert(data.message || 'Erro ao votar.')
           }
@@ -215,6 +221,42 @@ export default function VotePage() {
                   </select>
                 </div>
               </div>
+
+              {/* SOCIAL */}
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Escolaridade</label>
+                  <select
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
+                    value={education}
+                    onChange={(e) => setEducation(e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="Fundamental Incompleto">Fund. Incompleto</option>
+                    <option value="Fundamental Completo">Fund. Completo</option>
+                    <option value="Medio Incompleto">Médio Incompleto</option>
+                    <option value="Medio Completo">Médio Completo</option>
+                    <option value="Superior Incompleto">Sup. Incompleto</option>
+                    <option value="Superior Completo">Sup. Completo</option>
+                    <option value="Pos Graduacao">Pós-Graduação</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Renda Mensal</label>
+                  <select
+                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
+                    value={income}
+                    onChange={(e) => setIncome(e.target.value)}
+                  >
+                    <option value="">Selecione</option>
+                    <option value="Ate 1 SM">Até 1 Salário Min.</option>
+                    <option value="1 a 3 SM">1 a 3 Salários</option>
+                    <option value="3 a 5 SM">3 a 5 Salários</option>
+                    <option value="5 a 10 SM">5 a 10 Salários</option>
+                    <option value="Acima de 10 SM">Acima de 10 SMs</option>
+                  </select>
+                </div>
+              </div>
             </section>
 
             {/* DORES */}
@@ -233,8 +275,8 @@ export default function VotePage() {
                     key={item.id}
                     onClick={() => setConcern(item.id)}
                     className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${concern === item.id
-                        ? 'border-[#4338CA] bg-indigo-50 dark:bg-indigo-900/20 text-[#4338CA]'
-                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-[#4338CA] hover:text-[#4338CA] text-slate-400'
+                      ? 'border-[#4338CA] bg-indigo-50 dark:bg-indigo-900/20 text-[#4338CA]'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-[#4338CA] hover:text-[#4338CA] text-slate-400'
                       }`}
                   >
                     <span className="material-symbols-outlined mb-1">{item.icon}</span>
