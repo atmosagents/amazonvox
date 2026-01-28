@@ -19,6 +19,8 @@ export default function DashboardPage() {
     const [darkMode, setDarkMode] = useState(false)
 
     // Data & Filters
+    const [surveys, setSurveys] = useState<any[]>([])
+    const [selectedSurveyId, setSelectedSurveyId] = useState('')
     const [rawData, setRawData] = useState<any[]>([])
     const [filteredData, setFilteredData] = useState<any[]>([])
     const [filters, setFilters] = useState({
@@ -57,8 +59,30 @@ export default function DashboardPage() {
         if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
             setDarkMode(true)
         }
-        loadData()
+        loadSurveys()
     }, [])
+
+    useEffect(() => {
+        if (selectedSurveyId) loadData(selectedSurveyId)
+    }, [selectedSurveyId])
+
+    const loadSurveys = async () => {
+        try {
+            const res = await fetch('/api/surveys')
+            const data = await res.json()
+            if (Array.isArray(data) && data.length > 0) {
+                setSurveys(data)
+                // Select first one by default
+                setSelectedSurveyId(data[0].id)
+            } else {
+                // No surveys? Try loading legacy data purely?
+                loadData(null)
+            }
+        } catch (e) {
+            console.error('Failed to load surveys', e)
+            loadData(null) // Fallback to default
+        }
+    }
 
     useEffect(() => {
         if (darkMode) {
@@ -80,11 +104,12 @@ export default function DashboardPage() {
     }, [filteredData])
 
     // -- LOAD DATA --
-    const loadData = async () => {
+    const loadData = async (surveyId: string | null) => {
         try {
-            const response = await fetch('/api/voters')
+            const url = surveyId ? `/api/voters?survey_id=${surveyId}` : '/api/voters'
+            const response = await fetch(url)
             const data = await response.json()
-            setRawData(data)
+            setRawData(Array.isArray(data) ? data : [])
             setLastUpdate("Atualizado: " + new Date().toLocaleTimeString())
         } catch (error) {
             console.error('Erro ao carregar dados:', error)
@@ -288,6 +313,22 @@ export default function DashboardPage() {
                     <span className="text-white font-bold text-xl tracking-tight">Vox<span className="text-[#3B82F6]">Geo</span></span>
                     <span className="text-slate-400 font-light border-l border-slate-700 pl-3 ml-1">War Room</span>
                 </div>
+
+                {/* SURVEY SELECTOR */}
+                <div className="hidden md:flex items-center bg-white/10 rounded-lg px-3 py-1 border border-white/10 mx-4 flex-1 max-w-sm">
+                    <span className="material-icons-round text-indigo-400 text-sm mr-2">poll</span>
+                    <select
+                        value={selectedSurveyId}
+                        onChange={e => setSelectedSurveyId(e.target.value)}
+                        className="bg-transparent border-none text-xs font-bold text-white focus:ring-0 cursor-pointer w-full outline-none [&>option]:text-slate-800"
+                    >
+                        {surveys.length === 0 && <option value="">Carregando pesquisas...</option>}
+                        {surveys.map(s => (
+                            <option key={s.id} value={s.id}>{s.title}</option>
+                        ))}
+                    </select>
+                </div>
+
                 <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-3 bg-white/5 px-4 py-2 rounded-lg border border-white/10">
                         <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
