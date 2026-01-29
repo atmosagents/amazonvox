@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Script from 'next/script'
+import Link from 'next/link'
 import { Doughnut } from 'react-chartjs-2'
 import {
     Chart as ChartJS,
@@ -328,6 +329,11 @@ export default function DashboardPage() {
                         ))}
                     </select>
                 </div>
+
+                <Link href="/dashboard/surveys" className="flex items-center space-x-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg transition-colors text-xs font-bold border border-indigo-500 ml-2 shadow-sm" title="Criar ou Editar Pesquisas">
+                    <span className="material-icons-round text-sm">settings</span>
+                    <span className="hidden md:inline">Gerenciar</span>
+                </Link>
 
                 <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-3 bg-white/5 px-4 py-2 rounded-lg border border-white/10">
