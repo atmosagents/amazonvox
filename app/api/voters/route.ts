@@ -10,8 +10,8 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url)
         const surveyId = searchParams.get('survey_id')
 
-        // MODE 1: SaaS Survey Adapter
-        if (surveyId) {
+        // MODE 1: SaaS Survey Adapter. Explicitly check it's NOT legacy.
+        if (surveyId && surveyId !== 'legacy') {
             // 1. Fetch Survey Schema to get Labels (Optional optimisation, but good for robust mapping)
             const { data: survey } = await supabase
                 .from('surveys')

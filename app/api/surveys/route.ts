@@ -55,7 +55,20 @@ export async function GET() {
 
         if (error) throw error
 
-        return NextResponse.json(data)
+        // Inject Legacy Option
+        const legacy = {
+            id: 'legacy',
+            title: 'Pesquisa Original (Legado)',
+            slug: 'legacy',
+            description: 'Dados históricos da tabela original',
+            questions_schema: [],
+            created_at: new Date(0).toISOString(), // Oldest
+            active: true
+        }
+
+        const combined = [legacy, ...(data || [])]
+
+        return NextResponse.json(combined)
     } catch (e: any) {
         return NextResponse.json({ error: e.message }, { status: 500 })
     }
