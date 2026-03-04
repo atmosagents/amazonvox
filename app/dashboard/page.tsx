@@ -87,27 +87,45 @@ export default function DashboardPage() {
             const filterable = survey.questions_schema.filter((q: any) => {
                 const type = (q.type || '').toLowerCase()
                 if (invalidTypes.includes(type)) return false
-                return true // Accept 'select', 'radio', 'list', 'dropdown', 'multiple_choice'
+                return true
             })
 
-            // Populate options
+            // Populate options robustly
             const questionsWithOptions = filterable.map((q: any) => {
                 let options = q.options || q.choices || []
 
                 // If it lacks options, compute unique values from rawData
                 if (!Array.isArray(options) || options.length === 0) {
                     const uniqueValues = new Set<string>()
+
+                    // We must find the actual key in raw_data that maps to this question.
+                    // Usually it matches q.label or q.name.
+                    const searchKeys = [q.name?.toLowerCase(), q.label?.toLowerCase(), q.title?.toLowerCase()].filter(Boolean)
+
                     rawData.forEach(r => {
-                        if (r.raw_data && r.raw_data[q.name]) {
-                            const val = String(r.raw_data[q.name]).trim()
-                            if (val) uniqueValues.add(val)
+                        if (r.raw_data) {
+                            // Find matching key in raw_data (case insensitive)
+                            const matchedKey = Object.keys(r.raw_data).find(k => searchKeys.includes(k.toLowerCase()))
+
+                            if (matchedKey && r.raw_data[matchedKey]) {
+                                const val = String(r.raw_data[matchedKey]).trim()
+                                if (val && val !== 'null' && val !== 'undefined') {
+                                    uniqueValues.add(val)
+                                }
+                            }
                         }
                     })
+
                     options = Array.from(uniqueValues).map(val => ({ label: val, value: val }))
                 }
 
+                // Convert simple string array to object array if needed
+                if (Array.isArray(options) && options.length > 0 && typeof options[0] === 'string') {
+                    options = options.map((opt: string) => ({ label: opt, value: opt }))
+                }
+
                 return { ...q, options }
-            }).filter((q: any) => q.options && q.options.length > 0) // Hide filters with 0 options
+            }).filter((q: any) => q.options && q.options.length > 0)
 
             setDynamicQuestions(questionsWithOptions)
         } else {
