@@ -68,19 +68,6 @@ export default function DashboardPage() {
         const survey = surveys.find(s => s.id === selectedSurveyId)
         if (!survey) return;
 
-        if (survey.id === 'legacy') {
-            // Hardcode legacy filters for fallback map mapping
-            setDynamicQuestions([
-                { name: 'Candidato', label: 'Candidato', options: [{ label: 'Azul', value: '1' }, { label: 'Verde', value: '2' }] },
-                { name: 'Gênero', label: 'Gênero', options: [{ label: 'Feminino', value: 'F' }, { label: 'Masculino', value: 'M' }] },
-                { name: 'Idade', label: 'Idade', options: [{ label: '16-24', value: '16-24' }, { label: '25-44', value: '25-44' }, { label: '45-59', value: '45-59' }, { label: '60+', value: '60+' }] },
-                { name: 'Escolaridade', label: 'Esc', options: [{ label: 'Fundamental', value: 'Fundamental' }, { label: 'Médio', value: 'Medio' }, { label: 'Superior', value: 'Superior' }] },
-                { name: 'Renda', label: 'Renda', options: [{ label: 'Até 1 SM', value: 'Ate 1 SM' }, { label: '1 a 3 SM', value: '1 a 3 SM' }, { label: 'Alta Renda', value: 'Acima de 10 SM' }] },
-                { name: 'Principal Dor', label: 'Dor', options: [{ label: 'Segurança', value: 'Seguranca' }, { label: 'Saúde', value: 'Saude' }, { label: 'Educação', value: 'Educacao' }] },
-            ])
-            return;
-        }
-
         // Parse schema safely (sometimes Supabase returns JSONB as string, sometimes as object)
         let schemaArray: any[] = []
         try {
@@ -91,12 +78,30 @@ export default function DashboardPage() {
             }
         } catch (e) { console.error("Could not parse schema", e) }
 
+        // If schema is completely empty (e.g., legacy data), auto-discover schema keys from rawData!
+        if (schemaArray.length === 0 && rawData.length > 0) {
+            const discoveredKeys = new Set<string>()
+            rawData.forEach(r => {
+                if (r.raw_data) {
+                    Object.keys(r.raw_data).forEach(k => discoveredKeys.add(k))
+                }
+            })
+            schemaArray = Array.from(discoveredKeys).map(key => ({
+                name: key,
+                label: key,
+                type: 'select' // Assume categorical for filter purposes
+            }))
+        }
+
         if (schemaArray && schemaArray.length > 0) {
             // Filter out open text fields
             const invalidTypes = ['text', 'textarea', 'email', 'number', 'tel', 'date']
             const filterable = schemaArray.filter((q: any) => {
                 const type = (q.type || '').toLowerCase()
+                // Auto-discovered keys might contain "nome", "telefone", ignore them
+                const nameLower = (q.name || '').toLowerCase()
                 if (invalidTypes.includes(type)) return false
+                if (['nome', 'telefone', 'whatsapp', 'email', 'cpf'].includes(nameLower)) return false
                 return true
             })
 
@@ -109,7 +114,6 @@ export default function DashboardPage() {
                     const uniqueValues = new Set<string>()
 
                     // We must find the actual key in raw_data that maps to this question.
-                    // Usually it matches q.label or q.name.
                     const searchKeys = [q.name?.toLowerCase(), q.label?.toLowerCase(), q.title?.toLowerCase()].filter(Boolean)
 
                     rawData.forEach(r => {
