@@ -81,10 +81,20 @@ export default function DashboardPage() {
             return;
         }
 
-        if (survey.questions_schema && survey.questions_schema.length > 0) {
+        // Parse schema safely (sometimes Supabase returns JSONB as string, sometimes as object)
+        let schemaArray: any[] = []
+        try {
+            if (typeof survey.questions_schema === 'string') {
+                schemaArray = JSON.parse(survey.questions_schema)
+            } else if (Array.isArray(survey.questions_schema)) {
+                schemaArray = survey.questions_schema
+            }
+        } catch (e) { console.error("Could not parse schema", e) }
+
+        if (schemaArray && schemaArray.length > 0) {
             // Filter out open text fields
             const invalidTypes = ['text', 'textarea', 'email', 'number', 'tel', 'date']
-            const filterable = survey.questions_schema.filter((q: any) => {
+            const filterable = schemaArray.filter((q: any) => {
                 const type = (q.type || '').toLowerCase()
                 if (invalidTypes.includes(type)) return false
                 return true
