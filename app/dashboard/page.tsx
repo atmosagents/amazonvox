@@ -59,30 +59,61 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (selectedSurveyId) {
-            const survey = surveys.find(s => s.id === selectedSurveyId)
-
-            // Generate dynamic questions from schema if available, else legacy fallback
-            if (survey && survey.questions_schema && survey.questions_schema.length > 0) {
-                const filterable = survey.questions_schema.filter((q: any) => q.type === 'select' || q.type === 'radio')
-                setDynamicQuestions(filterable)
-            } else if (survey && survey.id === 'legacy') {
-                // Hardcode legacy filters for fallback map mapping
-                setDynamicQuestions([
-                    { name: 'Candidato', label: 'Candidato', options: [{ label: 'Azul', value: '1' }, { label: 'Verde', value: '2' }] },
-                    { name: 'Gênero', label: 'Gênero', options: [{ label: 'Feminino', value: 'F' }, { label: 'Masculino', value: 'M' }] },
-                    { name: 'Idade', label: 'Idade', options: [{ label: '16-24', value: '16-24' }, { label: '25-44', value: '25-44' }, { label: '45-59', value: '45-59' }, { label: '60+', value: '60+' }] },
-                    { name: 'Escolaridade', label: 'Esc', options: [{ label: 'Fundamental', value: 'Fundamental' }, { label: 'Médio', value: 'Medio' }, { label: 'Superior', value: 'Superior' }] },
-                    { name: 'Renda', label: 'Renda', options: [{ label: 'Até 1 SM', value: 'Ate 1 SM' }, { label: '1 a 3 SM', value: '1 a 3 SM' }, { label: 'Alta Renda', value: 'Acima de 10 SM' }] },
-                    { name: 'Principal Dor', label: 'Dor', options: [{ label: 'Segurança', value: 'Seguranca' }, { label: 'Saúde', value: 'Saude' }, { label: 'Educação', value: 'Educacao' }] },
-                ])
-            } else {
-                setDynamicQuestions([])
-            }
-
             setFilters({}) // Reset filters on survey change
             loadData(selectedSurveyId)
         }
     }, [selectedSurveyId])
+
+    useEffect(() => {
+        const survey = surveys.find(s => s.id === selectedSurveyId)
+        if (!survey) return;
+
+        if (survey.id === 'legacy') {
+            // Hardcode legacy filters for fallback map mapping
+            setDynamicQuestions([
+                { name: 'Candidato', label: 'Candidato', options: [{ label: 'Azul', value: '1' }, { label: 'Verde', value: '2' }] },
+                { name: 'Gênero', label: 'Gênero', options: [{ label: 'Feminino', value: 'F' }, { label: 'Masculino', value: 'M' }] },
+                { name: 'Idade', label: 'Idade', options: [{ label: '16-24', value: '16-24' }, { label: '25-44', value: '25-44' }, { label: '45-59', value: '45-59' }, { label: '60+', value: '60+' }] },
+                { name: 'Escolaridade', label: 'Esc', options: [{ label: 'Fundamental', value: 'Fundamental' }, { label: 'Médio', value: 'Medio' }, { label: 'Superior', value: 'Superior' }] },
+                { name: 'Renda', label: 'Renda', options: [{ label: 'Até 1 SM', value: 'Ate 1 SM' }, { label: '1 a 3 SM', value: '1 a 3 SM' }, { label: 'Alta Renda', value: 'Acima de 10 SM' }] },
+                { name: 'Principal Dor', label: 'Dor', options: [{ label: 'Segurança', value: 'Seguranca' }, { label: 'Saúde', value: 'Saude' }, { label: 'Educação', value: 'Educacao' }] },
+            ])
+            return;
+        }
+
+        if (survey.questions_schema && survey.questions_schema.length > 0) {
+            // Filter out open text fields
+            const invalidTypes = ['text', 'textarea', 'email', 'number', 'tel', 'date']
+            const filterable = survey.questions_schema.filter((q: any) => {
+                const type = (q.type || '').toLowerCase()
+                if (invalidTypes.includes(type)) return false
+                return true // Accept 'select', 'radio', 'list', 'dropdown', 'multiple_choice'
+            })
+
+            // Populate options
+            const questionsWithOptions = filterable.map((q: any) => {
+                let options = q.options || q.choices || []
+
+                // If it lacks options, compute unique values from rawData
+                if (!Array.isArray(options) || options.length === 0) {
+                    const uniqueValues = new Set<string>()
+                    rawData.forEach(r => {
+                        if (r.raw_data && r.raw_data[q.name]) {
+                            const val = String(r.raw_data[q.name]).trim()
+                            if (val) uniqueValues.add(val)
+                        }
+                    })
+                    options = Array.from(uniqueValues).map(val => ({ label: val, value: val }))
+                }
+
+                return { ...q, options }
+            }).filter((q: any) => q.options && q.options.length > 0) // Hide filters with 0 options
+
+            setDynamicQuestions(questionsWithOptions)
+        } else {
+            setDynamicQuestions([])
+        }
+    }, [selectedSurveyId, surveys, rawData])
 
     const loadSurveys = async () => {
         try {
