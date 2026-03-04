@@ -1,113 +1,106 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import Head from 'next/head'
+import { useSearchParams } from 'next/navigation'
 
-export default function VotePage() {
-  const [loading, setLoading] = useState(false)
+function VotePageContent() {
+  const searchParams = useSearchParams()
+  const surveyIdParam = searchParams?.get('surveyId')
 
-  // -- STATES --
-  const [candidate, setCandidate] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [cpf, setCpf] = useState('')
-  const [whatsapp, setWhatsapp] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [survey, setSurvey] = useState<any>(null)
 
-  const [gender, setGender] = useState('')
-  const [ageRange, setAgeRange] = useState('')
-  const [concern, setConcern] = useState('')
-  const [certainty, setCertainty] = useState(3)
-  const [isVolunteer, setIsVolunteer] = useState(false)
-  const [education, setEducation] = useState('')
-  const [income, setIncome] = useState('')
+  // -- DYNAMIC STATE --
+  const [answers, setAnswers] = useState<Record<string, any>>({})
+  const [submitting, setSubmitting] = useState(false)
 
-  // -- HANDLERS --
-  const handleCpfChange = (val: string) => {
-    let v = val.replace(/\D/g, '')
-    v = v.replace(/(\d{3})(\d)/, '$1.$2')
-    v = v.replace(/(\d{3})(\d)/, '$1.$2')
-    v = v.replace(/(\d{3})(\d{1,2})$/, '$1-$2')
-    if (v.length <= 14) setCpf(v)
+  // -- INIT FETCH --
+  useEffect(() => {
+    fetchSurvey()
+  }, [surveyIdParam])
+
+  const fetchSurvey = async () => {
+    try {
+      if (surveyIdParam) {
+        // Fetch specific by ID (requires a route, but for now we fetch all and filter)
+        const res = await fetch('/api/surveys')
+        const data = await res.json()
+        const found = data.find((s: any) => s.id.toString() === surveyIdParam)
+        if (found) setSurvey(found)
+        else setError('Pesquisa não encontrada.')
+      } else {
+        // Auto-load most recent survey
+        const res = await fetch('/api/surveys')
+        const data = await res.json()
+        const activeSurveys = data.filter((s: any) => s.id !== 'legacy' && s.active !== false)
+        if (activeSurveys.length > 0) {
+          setSurvey(activeSurveys[0])
+        } else {
+          setError('Nenhuma pesquisa ativa encontrada no momento.')
+        }
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleWhatsappChange = (val: string) => {
-    let v = val.replace(/\D/g, '')
-    v = v.replace(/^(\d{2})(\d)/, '($1) $2')
-    v = v.replace(/(\d)(\d{4})$/, '$1-$2')
-    if (v.length <= 15) setWhatsapp(v)
+  const [error, setError] = useState('')
+
+  // -- HANDLERS --
+  const handleAnswer = (questionName: string, value: any) => {
+    setAnswers(prev => ({ ...prev, [questionName]: value }))
   }
 
   const handleVote = async () => {
-    const rawCpf = cpf.replace(/\D/g, '')
-    const rawWa = whatsapp.replace(/\D/g, '')
-
-    if (!name || rawCpf.length !== 11 || rawWa.length < 10 || !candidate) {
-      alert('Por favor, preencha nome, CPF, WhatsApp e escolha um candidato.')
-      return
-    }
-
-    setLoading(true)
+    setSubmitting(true)
 
     if (!navigator.geolocation) {
-      alert('Seu dispositivo não suporta geolocalização.')
-      setLoading(false)
+      alert('Seu dispositivo não suporta geolocalização. Necessário para enviar os dados de campo.')
+      setSubmitting(false)
       return
     }
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const lat = position.coords.latitude.toString()
-        const lng = position.coords.longitude.toString()
-
-        const formData = new FormData()
-        formData.append('candidate_id', candidate)
-        formData.append('lat', lat)
-        formData.append('lng', lng)
-        formData.append('voter_name', name)
-        formData.append('voter_cpf', cpf)
-        formData.append('voter_whatsapp', whatsapp)
-        formData.append('voter_gender', gender)
-        formData.append('voter_age_range', ageRange)
-        formData.append('main_concern', concern)
-        formData.append('vote_certainty', certainty.toString())
-        formData.append('voter_education', education)
-        formData.append('voter_income', income)
-        if (isVolunteer) formData.append('is_volunteer', 'on')
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
 
         try {
-          const res = await fetch('/api/vote', {
+          const res = await fetch('/api/surveys/respond', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              survey_id: survey.id,
+              respondent_data: answers,
+              latitude: lat,
+              longitude: lng,
+              origin_source: 'coletor_web'
+            })
           })
 
           const data = await res.json()
 
           if (data.success) {
-            alert(data.message)
+            alert("Resposta enviada com sucesso!")
             // Reset
-            setCandidate(null)
-            setName('')
-            setCpf('')
-            setWhatsapp('')
-            setCertainty(3)
-            setIsVolunteer(false)
-            setConcern('')
-            setGender('')
-            setAgeRange('')
-            setEducation('')
-            setIncome('')
+            setAnswers({})
+            window.scrollTo(0, 0)
           } else {
-            alert(data.message || 'Erro ao votar.')
+            alert(data.error || 'Erro ao salvar resposta no banco de dados.')
           }
         } catch (e) {
-          alert('Erro de conexão.')
+          alert('Erro de conexão ao servidor.')
         } finally {
-          setLoading(false)
+          setSubmitting(false)
         }
       },
-      (error) => {
-        let msg = error.code === 1 ? 'Você negou a permissão de localização.' : 'Não foi possível obter sua posição.'
+      (geoError) => {
+        let msg = geoError.code === 1 ? 'Você negou a permissão de localização. Libere o GPS no navegador.' : 'Não foi possível obter sua posição GPS.'
         alert(msg)
-        setLoading(false)
+        setSubmitting(false)
       },
       { enableHighAccuracy: true, timeout: 10000 }
     )
@@ -145,226 +138,166 @@ export default function VotePage() {
         <main className="w-full max-w-[430px] bg-white dark:bg-slate-900 min-h-screen shadow-2xl relative overflow-hidden flex flex-col">
 
           {/* HEADER */}
-          <header className="bg-[#1E1B4B] pt-16 pb-12 px-8 rounded-b-[40px] text-center relative overflow-hidden">
+          <header className="bg-[#1E1B4B] pt-16 pb-12 px-8 rounded-b-[40px] text-center relative overflow-hidden shrink-0">
             <div className="absolute top-0 left-0 w-full h-full opacity-10">
               <div className="absolute -top-10 -left-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
               <div className="absolute top-20 -right-10 w-32 h-32 bg-[#4338CA] rounded-full blur-3xl"></div>
             </div>
             <div className="relative z-10">
-              <h1 className="text-3xl font-bold text-white tracking-tight">Vox Eleições</h1>
-              <p className="text-slate-300 mt-2 text-sm font-light">Participe da pesquisa estratégica. Seus dados estão protegidos.</p>
+              <h1 className="text-3xl font-bold text-white tracking-tight">{survey?.title || 'Pesquisa'}</h1>
+              <p className="text-slate-300 mt-2 text-sm font-light">{survey?.description || 'Participe de nossa pesquisa estratégica.'}</p>
             </div>
           </header>
 
           <div className="flex-1 px-6 -mt-8 pb-10 space-y-8 relative z-20">
 
-            {/* DADOS */}
-            <section className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="material-symbols-outlined text-[#4338CA] text-xl">account_circle</span>
-                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Seus Dados</h2>
+            {loading ? (
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl text-center flex flex-col items-center justify-center">
+                <span className="material-symbols-outlined animate-spin text-[#4338CA] text-4xl mb-4">refresh</span>
+                <p className="text-slate-500">Carregando formulário...</p>
               </div>
-              <div className="space-y-4">
-                <div className="relative">
-                  <input
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-[#4338CA] focus:border-[#4338CA] transition-all text-sm outline-none"
-                    placeholder="Nome Completo"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <input
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-[#4338CA] focus:border-[#4338CA] transition-all text-sm outline-none"
-                    placeholder="CPF"
-                    type="tel"
-                    value={cpf}
-                    onChange={(e) => handleCpfChange(e.target.value)}
-                  />
-                  <input
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-[#4338CA] focus:border-[#4338CA] transition-all text-sm outline-none"
-                    placeholder="WhatsApp"
-                    type="tel"
-                    value={whatsapp}
-                    onChange={(e) => handleWhatsappChange(e.target.value)}
-                  />
-                </div>
+            ) : error ? (
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-xl text-center text-red-500 border border-red-200">
+                <span className="material-symbols-outlined text-4xl mb-2">error</span>
+                <p>{error}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Gênero</label>
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="M">Masculino</option>
-                    <option value="F">Feminino</option>
-                    <option value="O">Outro</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Faixa Etária</label>
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
-                    value={ageRange}
-                    onChange={(e) => setAgeRange(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="16-24">16 a 24 anos</option>
-                    <option value="25-44">25 a 34 anos</option>
-                    <option value="35-44">35 a 44 anos</option>
-                    <option value="45-59">45 a 59 anos</option>
-                    <option value="60+">60+ anos</option>
-                  </select>
-                </div>
-              </div>
+            ) : (
+              <div className="space-y-6">
+                {survey?.questions_schema?.map((q: any, idx: number) => {
+                  const type = (q.type || 'text').toLowerCase()
+                  const qName = q.name || q.label || `q_${idx}`
 
-              {/* SOCIAL */}
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Escolaridade</label>
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
-                    value={education}
-                    onChange={(e) => setEducation(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="Fundamental Incompleto">Fund. Incompleto</option>
-                    <option value="Fundamental Completo">Fund. Completo</option>
-                    <option value="Medio Incompleto">Médio Incompleto</option>
-                    <option value="Medio Completo">Médio Completo</option>
-                    <option value="Superior Incompleto">Sup. Incompleto</option>
-                    <option value="Superior Completo">Sup. Completo</option>
-                    <option value="Pos Graduacao">Pós-Graduação</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 px-1">Renda Mensal</label>
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none"
-                    value={income}
-                    onChange={(e) => setIncome(e.target.value)}
-                  >
-                    <option value="">Selecione</option>
-                    <option value="Ate 1 SM">Até 1 Salário Min.</option>
-                    <option value="1 a 3 SM">1 a 3 Salários</option>
-                    <option value="3 a 5 SM">3 a 5 Salários</option>
-                    <option value="5 a 10 SM">5 a 10 Salários</option>
-                    <option value="Acima de 10 SM">Acima de 10 SMs</option>
-                  </select>
-                </div>
-              </div>
-            </section>
-
-            {/* DORES */}
-            <section>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4 px-1">Qual o maior problema do seu bairro hoje?</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'Saude', label: 'Saúde', icon: 'medical_services' },
-                  { id: 'Seguranca', label: 'Segurança', icon: 'security' },
-                  { id: 'Educacao', label: 'Educação', icon: 'school' },
-                  { id: 'Infraestrutura', label: 'Asfalto', icon: 'construction' },
-                  { id: 'Emprego', label: 'Emprego', icon: 'work' },
-                  { id: 'Outros', label: 'Outros', icon: 'more_horiz' }
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setConcern(item.id)}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${concern === item.id
-                      ? 'border-[#4338CA] bg-indigo-50 dark:bg-indigo-900/20 text-[#4338CA]'
-                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-[#4338CA] hover:text-[#4338CA] text-slate-400'
-                      }`}
-                  >
-                    <span className="material-symbols-outlined mb-1">{item.icon}</span>
-                    <span className="text-[10px] font-medium">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* VOTO */}
-            <section>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4 px-1 text-center">Sua intenção de voto</h3>
-              <div className="grid grid-cols-2 gap-4">
-
-                {/* CANDIDATO 1 */}
-                <div onClick={() => setCandidate('1')} className="relative group cursor-pointer">
-                  <div className={`absolute inset-0 bg-blue-500 opacity-0 rounded-2xl transition-all ${candidate === '1' ? 'opacity-10' : 'group-hover:opacity-5'}`}></div>
-                  <div className={`bg-white dark:bg-slate-800 border p-4 rounded-2xl text-center shadow-sm transition-all border-b-4 ${candidate === '1' ? 'border-blue-500 border-t-2 border-x-2' : 'border-slate-200 dark:border-slate-700 border-b-blue-500'}`}>
-                    <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full mx-auto mb-3 flex items-center justify-center overflow-hidden relative">
-                      <span className="material-symbols-outlined text-blue-600 text-4xl">person_pin</span>
-                      {candidate === '1' && <div className="absolute top-0 right-0 bg-blue-500 text-white rounded-full p-1 leading-none"><span className="material-symbols-outlined text-[12px]">check</span></div>}
+                  // Common label
+                  const QuestionLabel = () => (
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="material-symbols-outlined text-[#4338CA] text-xl">help_outline</span>
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">{q.label || q.title}</h3>
                     </div>
-                    <p className="text-blue-700 dark:text-blue-400 font-bold text-sm">Candidato Azul</p>
-                    <p className="text-[10px] text-slate-400">Partido Liberal</p>
-                  </div>
-                </div>
+                  )
 
-                {/* CANDIDATO 2 */}
-                <div onClick={() => setCandidate('2')} className="relative group cursor-pointer">
-                  <div className={`absolute inset-0 bg-emerald-500 opacity-0 rounded-2xl transition-all ${candidate === '2' ? 'opacity-10' : 'group-hover:opacity-5'}`}></div>
-                  <div className={`bg-white dark:bg-slate-800 border p-4 rounded-2xl text-center shadow-md transition-all border-b-4 ${candidate === '2' ? 'border-emerald-500 border-t-2 border-x-2' : 'border-slate-200 dark:border-slate-700 border-b-emerald-600'}`}>
-                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 rounded-full mx-auto mb-3 flex items-center justify-center relative">
-                      <span className="material-symbols-outlined text-emerald-600 text-4xl">person_pin</span>
-                      {candidate === '2' && <div className="absolute top-0 right-0 bg-emerald-500 text-white rounded-full p-1 leading-none"><span className="material-symbols-outlined text-[12px]">check</span></div>}
-                    </div>
-                    <p className="text-emerald-700 dark:text-emerald-400 font-bold text-sm">Candidato Verde</p>
-                    <p className="text-[10px] text-slate-400">Frente Democrática</p>
-                  </div>
-                </div>
+                  // 1. Text, Telephone, Email, Number
+                  if (['text', 'tel', 'email', 'number', 'date', 'textarea'].includes(type)) {
+                    return (
+                      <section key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700">
+                        <QuestionLabel />
+                        <input
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-[#4338CA] focus:border-[#4338CA] transition-all text-sm outline-none placeholder:text-slate-400 dark:text-white"
+                          type={type === 'textarea' ? 'text' : type}
+                          placeholder={q.placeholder || 'Sua resposta...'}
+                          required={q.required}
+                          value={answers[qName] || ''}
+                          onChange={(e) => handleAnswer(qName, e.target.value)}
+                        />
+                      </section>
+                    )
+                  }
 
+                  // 2. Select / Dropdown
+                  if (type === 'select' || type === 'dropdown') {
+                    const opts = q.options || q.choices || []
+                    return (
+                      <section key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700">
+                        <QuestionLabel />
+                        <select
+                          className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm appearance-none outline-none focus:ring-[#4338CA] focus:border-[#4338CA] dark:text-white"
+                          required={q.required}
+                          value={answers[qName] || ''}
+                          onChange={(e) => handleAnswer(qName, e.target.value)}
+                        >
+                          <option value="">Selecione...</option>
+                          {opts.map((opt: any, i: number) => {
+                            const val = typeof opt === 'string' ? opt : opt.value
+                            const label = typeof opt === 'string' ? opt : opt.label
+                            return <option key={i} value={val}>{label}</option>
+                          })}
+                        </select>
+                      </section>
+                    )
+                  }
+
+                  // 3. Radio / Multiple Choice (Cards)
+                  if (type === 'radio' || type === 'multiple_choice' || type === 'list') {
+                    const opts = q.options || q.choices || []
+                    return (
+                      <section key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700">
+                        <QuestionLabel />
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                          {opts.map((opt: any, i: number) => {
+                            const val = typeof opt === 'string' ? opt : opt.value
+                            const label = typeof opt === 'string' ? opt : opt.label
+                            const isSelected = answers[qName] === val
+
+                            return (
+                              <div
+                                key={i}
+                                onClick={() => handleAnswer(qName, val)}
+                                className="relative group cursor-pointer h-full"
+                              >
+                                <div className={`absolute inset-0 bg-[#4338CA] opacity-0 rounded-2xl transition-all ${isSelected ? 'opacity-10' : 'group-hover:opacity-5'}`}></div>
+                                <div className={`h-full flex flex-col items-center justify-center bg-white dark:bg-slate-800 border p-3 py-4 rounded-2xl text-center shadow-sm transition-all border-b-4 ${isSelected ? 'border-[#4338CA] border-t-2 border-x-2 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 border-b-[#4338CA]/30 hover:border-b-[#4338CA] hover:bg-slate-50 dark:hover:bg-slate-800/80'}`}>
+                                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 leading-tight">{label}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    )
+                  }
+
+                  // 4. Scale 1-5 or 1-10
+                  if (type === 'scale') {
+                    const max = q.max || 5
+                    const arr = Array.from({ length: max }, (_, i) => i + 1)
+                    return (
+                      <section key={idx} className="bg-slate-50 dark:bg-slate-900/30 p-6 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center mb-6">{q.label || q.title} ({answers[qName] || '-'})</h3>
+                        <div className="relative px-2">
+                          <input
+                            className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#4338CA]"
+                            max={max} min="1" step="1" type="range"
+                            value={answers[qName] || 1}
+                            onChange={(e) => handleAnswer(qName, Number(e.target.value))}
+                          />
+                          <div className="flex justify-between mt-3 text-[10px] font-semibold text-slate-400 px-1 uppercase">
+                            <span>Mínimo</span>
+                            <span className="text-[#4338CA] text-sm">{answers[qName] || '-'}</span>
+                            <span>Máximo</span>
+                          </div>
+                        </div>
+                      </section>
+                    )
+                  }
+
+                  // Fallback Text Input
+                  return (
+                    <section key={idx} className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-700">
+                      <QuestionLabel />
+                      <input
+                        className="w-full bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:ring-[#4338CA] transition-all text-sm outline-none dark:text-white"
+                        placeholder="Sua resposta..."
+                        value={answers[qName] || ''}
+                        onChange={(e) => handleAnswer(qName, e.target.value)}
+                      />
+                    </section>
+                  )
+                })}
+
+                <button
+                  onClick={handleVote}
+                  disabled={submitting || loading || !!error}
+                  className="w-full py-4 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-[#4338CA]/30 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed mt-8"
+                >
+                  <span>{submitting ? 'Enviando Dados...' : 'Confirmar e Enviar Pesquisa'}</span>
+                  <span className="material-symbols-outlined text-lg">send</span>
+                </button>
+
+                <footer className="text-center pb-8 pt-4">
+                  <p className="text-[10px] text-slate-400">© 2024 Vox Eleições. Pesquisa Registrada no TSE.</p>
+                </footer>
               </div>
-            </section>
+            )}
 
-            {/* CERTEZA */}
-            <section className="bg-slate-50 dark:bg-slate-900/30 p-6 rounded-2xl">
-              <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center mb-6">Quão certo você está? ({certainty})</h3>
-              <div className="relative px-2">
-                <input
-                  className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-[#4338CA]"
-                  max="5" min="1" step="1" type="range"
-                  value={certainty}
-                  onChange={(e) => setCertainty(Number(e.target.value))}
-                />
-                <div className="flex justify-between mt-3 text-[10px] font-semibold text-slate-400 px-1 uppercase">
-                  <span>Indeciso</span>
-                  <span className="text-[#4338CA] text-sm">{certainty}</span>
-                  <span>Absoluta</span>
-                </div>
-              </div>
-            </section>
-
-            {/* VOLUNTARIO */}
-            <label className="flex items-center gap-4 bg-[#4338CA]/5 dark:bg-[#4338CA]/10 p-4 rounded-xl border border-[#4338CA]/20 cursor-pointer group">
-              <div className="relative flex items-center">
-                <input
-                  type="checkbox"
-                  className="w-5 h-5 rounded border-[#4338CA] text-[#4338CA] focus:ring-[#4338CA] focus:ring-offset-0 bg-white dark:bg-slate-800"
-                  checked={isVolunteer}
-                  onChange={(e) => setIsVolunteer(e.target.checked)}
-                />
-              </div>
-              <span className="text-xs font-medium text-slate-700 dark:text-slate-300 group-hover:text-[#4338CA] transition-colors">
-                Quero receber material e ajudar na campanha!
-              </span>
-            </label>
-
-            <button
-              onClick={handleVote}
-              disabled={loading}
-              className="w-full py-4 bg-[#4338CA] hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-[#4338CA]/30 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>{loading ? 'Enviando Voto...' : 'Confirmar e Enviar Pesquisa'}</span>
-              <span className="material-symbols-outlined text-lg">send</span>
-            </button>
-
-            <footer className="text-center pb-8">
-              <p className="text-[10px] text-slate-400">© 2024 Vox Eleições. Pesquisa Registrada no TSE.</p>
-            </footer>
           </div>
         </main>
 
@@ -378,5 +311,13 @@ export default function VotePage() {
         </button>
       </div>
     </>
+  )
+}
+
+export default function VotePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#0F172A] text-white">Carregando...</div>}>
+      <VotePageContent />
+    </Suspense>
   )
 }
