@@ -74,7 +74,8 @@ export async function GET(request: Request) {
                     income_range: income,
                     latitude: r.latitude,
                     longitude: r.longitude,
-                    created_at: r.created_at
+                    created_at: r.created_at,
+                    raw_data: data // Added for fully dynamic InfoWindow mapping
                 }
             })
 
@@ -93,7 +94,20 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: 'Erro ao buscar dados' }, { status: 500 })
         }
 
-        return NextResponse.json(voters)
+        // Append raw_data for legacy compatibility as well
+        const mappedVoters = voters.map((v: any) => ({
+            ...v,
+            raw_data: {
+                'Gênero': v.voter_gender,
+                'Idade': v.voter_age_range,
+                'Escolaridade': v.voter_education,
+                'Renda': v.voter_income,
+                'Principal Dor': v.main_concern,
+                'Whatsapp': v.voter_whatsapp
+            }
+        }))
+
+        return NextResponse.json(mappedVoters)
     } catch (e) {
         console.error('Server error:', e)
         return NextResponse.json({ error: 'Erro interno' }, { status: 500 })

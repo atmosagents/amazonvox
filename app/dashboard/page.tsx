@@ -24,14 +24,8 @@ export default function DashboardPage() {
     const [selectedSurveyId, setSelectedSurveyId] = useState('')
     const [rawData, setRawData] = useState<any[]>([])
     const [filteredData, setFilteredData] = useState<any[]>([])
-    const [filters, setFilters] = useState({
-        candidate: '',
-        gender: '',
-        age: '',
-        concern: '',
-        education: '',
-        income: ''
-    })
+    const [filters, setFilters] = useState<Record<string, string>>({})
+    const [dynamicQuestions, setDynamicQuestions] = useState<any[]>([])
     const [searchTerm, setSearchTerm] = useState('') // For CRM Search
 
     // Visuals State
@@ -64,12 +58,37 @@ export default function DashboardPage() {
     }, [])
 
     useEffect(() => {
-        if (selectedSurveyId) loadData(selectedSurveyId)
+        if (selectedSurveyId) {
+            const survey = surveys.find(s => s.id === selectedSurveyId)
+
+            // Generate dynamic questions from schema if available, else legacy fallback
+            if (survey && survey.questions_schema && survey.questions_schema.length > 0) {
+                const filterable = survey.questions_schema.filter((q: any) => q.type === 'select' || q.type === 'radio')
+                setDynamicQuestions(filterable)
+            } else if (survey && survey.id === 'legacy') {
+                // Hardcode legacy filters for fallback map mapping
+                setDynamicQuestions([
+                    { name: 'Candidato', label: 'Candidato', options: [{ label: 'Azul', value: '1' }, { label: 'Verde', value: '2' }] },
+                    { name: 'Gênero', label: 'Gênero', options: [{ label: 'Feminino', value: 'F' }, { label: 'Masculino', value: 'M' }] },
+                    { name: 'Idade', label: 'Idade', options: [{ label: '16-24', value: '16-24' }, { label: '25-44', value: '25-44' }, { label: '45-59', value: '45-59' }, { label: '60+', value: '60+' }] },
+                    { name: 'Escolaridade', label: 'Esc', options: [{ label: 'Fundamental', value: 'Fundamental' }, { label: 'Médio', value: 'Medio' }, { label: 'Superior', value: 'Superior' }] },
+                    { name: 'Renda', label: 'Renda', options: [{ label: 'Até 1 SM', value: 'Ate 1 SM' }, { label: '1 a 3 SM', value: '1 a 3 SM' }, { label: 'Alta Renda', value: 'Acima de 10 SM' }] },
+                    { name: 'Principal Dor', label: 'Dor', options: [{ label: 'Segurança', value: 'Seguranca' }, { label: 'Saúde', value: 'Saude' }, { label: 'Educação', value: 'Educacao' }] },
+                ])
+            } else {
+                setDynamicQuestions([])
+            }
+
+            setFilters({}) // Reset filters on survey change
+            loadData(selectedSurveyId)
+        }
     }, [selectedSurveyId])
 
     const loadSurveys = async () => {
         try {
             const res = await fetch('/api/surveys')
+            if (!res.ok) throw new Error('Failed to fetch surveys')
+
             const data = await res.json()
             if (Array.isArray(data) && data.length > 0) {
                 setSurveys(data)
@@ -77,11 +96,18 @@ export default function DashboardPage() {
                 setSelectedSurveyId(data[0].id)
             } else {
                 // No surveys? Try loading legacy data purely?
+                console.warn('No surveys found, loading legacy data')
+                const fallback = [{ id: 'legacy', title: 'Dados Legados (Offline)', slug: 'legacy' }]
+                setSurveys(fallback)
+                setSelectedSurveyId('legacy')
                 loadData(null)
             }
         } catch (e) {
             console.error('Failed to load surveys', e)
-            loadData(null) // Fallback to default
+            const fallback = [{ id: 'legacy', title: 'Erro ao carregar (Offline)', slug: 'legacy' }]
+            setSurveys(fallback)
+            setSelectedSurveyId('legacy')
+            loadData(null)
         }
     }
 
@@ -121,17 +147,28 @@ export default function DashboardPage() {
     // -- FILTERING --
     const applyFilters = () => {
         let res = [...rawData]
-        if (filters.candidate) res = res.filter(v => v.candidate_id.toString() === filters.candidate)
-        if (filters.gender) res = res.filter(v => v.voter_gender === filters.gender)
-        if (filters.age) res = res.filter(v => v.voter_age_range === filters.age)
-        if (filters.concern) res = res.filter(v => v.main_concern === filters.concern)
-        if (filters.education) res = res.filter(v => v.voter_education && v.voter_education.includes(filters.education))
-        if (filters.income) res = res.filter(v => v.voter_income && v.voter_income.includes(filters.income))
+
+        // Loop through dynamic filter keys
+        Object.keys(filters).forEach(key => {
+            const filterValue = filters[key]
+            if (filterValue) {
+                if (key === 'Candidato' || key === 'candidate') {
+                    // special handling for the main candidate pie visualization
+                    res = res.filter(v =>
+                        (v.candidate_id && v.candidate_id.toString() === filterValue) ||
+                        (v.raw_data && v.raw_data[key] && String(v.raw_data[key]) === filterValue)
+                    )
+                } else {
+                    res = res.filter(v => v.raw_data && v.raw_data[key] && String(v.raw_data[key]).includes(filterValue))
+                }
+            }
+        })
+
         setFilteredData(res)
     }
 
     const resetFilters = () => {
-        setFilters({ candidate: '', gender: '', age: '', concern: '', education: '', income: '' })
+        setFilters({})
     }
 
     const handleFilterChange = (key: string, value: string) => {
@@ -216,37 +253,45 @@ export default function DashboardPage() {
                 const candName = v.candidate_id === 1 ? "Azul" : "Verde"
                 const colorText = v.candidate_id === 1 ? "text-blue-600" : "text-green-600"
 
-                const content = `
-                    <div class="p-2 font-sans min-w-[220px]">
-                        <div class="font-bold text-gray-800 mb-1 flex justify-between">
-                            <span>${v.voter_name}</span>
-                            <span class="text-[10px] bg-gray-100 px-1 rounded flex items-center">${v.voter_age_range || ''}</span>
-                        </div>
-                        
-                        <div class="text-xs text-gray-500 mb-2 border-b pb-2">
-                            Voto: <strong class="${colorText}">${candName}</strong>
-                            <span class="ml-2 text-[10px] text-gray-400">(${v.vote_certainty >= 4 ? 'Firme' : 'Indeciso'})</span>
-                        </div>
+                // --- Dynamic Content Mapping ---
+                let dynamicContentHtml = ''
+                if (v.raw_data) {
+                    Object.entries(v.raw_data).forEach(([key, val]) => {
+                        if (!val || typeof val !== 'string' || val.trim() === '' || key.toLowerCase() === 'whatsapp') return; // Skip empty and handled special keys
 
-                        <div class="grid grid-cols-2 gap-2 mb-2 text-[10px] text-gray-600">
-                            <div class="bg-slate-50 p-1.5 rounded">
-                                <span class="block font-bold text-gray-400 uppercase text-[9px]">Escolaridade</span>
-                                ${v.voter_education || '-'}
-                            </div>
-                            <div class="bg-slate-50 p-1.5 rounded">
-                                <span class="block font-bold text-gray-400 uppercase text-[9px]">Renda</span>
-                                ${v.voter_income || '-'}
-                            </div>
-                        </div>
+                        dynamicContentHtml += `
+                             <div class="bg-slate-50 p-1.5 rounded mb-1">
+                                 <span class="block font-bold text-gray-400 uppercase text-[9px] truncate">${key}</span>
+                                 <span class="text-[10px] whitespace-normal">${val}</span>
+                             </div>
+                         `
+                    })
+                }
 
-                        <div class="bg-red-50 p-1.5 rounded border border-red-100 mb-2">
-                             <div class="text-[9px] text-red-400 uppercase font-bold">Principal Dor</div>
-                             <div class="text-xs font-medium text-red-700">${v.main_concern || 'Não informou'}</div>
-                        </div>
-
-                        <a href="https://wa.me/55${v.voter_whatsapp}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2 rounded hover:bg-green-600 transition flex items-center justify-center gap-1" style="text-decoration:none; padding: 8px;">
+                // WhatsApp Bug Fix
+                const phoneField = v.voter_whatsapp || (v.raw_data && (v.raw_data['Whatsapp'] || v.raw_data['Telefone'] || v.raw_data['telefone']))
+                const cleanPhone = phoneField ? String(phoneField).replace(/\\D/g, '') : ''
+                const waButtonHtml = cleanPhone ? `
+                        <a href="https://wa.me/55${cleanPhone}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2 rounded hover:bg-green-600 transition flex items-center justify-center gap-1 mt-2" style="text-decoration:none; padding: 8px;">
                             <span class="material-icons-round text-sm">whatsapp</span> CHAMAR
                         </a>
+                ` : ''
+
+                const content = `
+                    <div class="p-2 font-sans min-w-[220px] max-w-[260px] max-h-[300px] overflow-y-auto sidebar-scroll">
+                        <div class="font-bold text-gray-800 mb-1 flex justify-between">
+                            <span class="truncate pr-2">${v.voter_name || 'Anônimo'}</span>
+                            <span class="text-[10px] bg-gray-100 px-1 rounded flex items-center shrink-0 border border-gray-200" title="Data: ${new Date(v.created_at).toLocaleDateString()}">Id: ${v.id}</span>
+                        </div>
+                        
+                        <div class="text-xs text-gray-500 mb-2 border-b pb-2 flex items-center justify-between">
+                            <div>
+                                Voto Apurado: <strong class="${colorText}">${candName}</strong>
+                            </div>
+                        </div>
+
+                        ${dynamicContentHtml}
+                        ${waButtonHtml}
                     </div>
                 `
                 infoWindowRef.current.setContent(content)
@@ -348,63 +393,26 @@ export default function DashboardPage() {
 
             {/* FILTERS BAR */}
             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 shadow-sm shrink-0 z-40">
-                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Candidato</label>
-                        <select value={filters.candidate} onChange={e => handleFilterChange('candidate', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todos</option>
-                            <option value="1">Candidato Azul</option>
-                            <option value="2">Candidato Verde</option>
-                        </select>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Gênero</label>
-                        <select value={filters.gender} onChange={e => handleFilterChange('gender', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todos</option>
-                            <option value="F">Feminino</option>
-                            <option value="M">Masculino</option>
-                        </select>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Idade</label>
-                        <select value={filters.age} onChange={e => handleFilterChange('age', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todas</option>
-                            <option value="16-24">16-24</option>
-                            <option value="25-44">25-44</option>
-                            <option value="45-59">45-59</option>
-                            <option value="60+">60+</option>
-                        </select>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Escolaridade</label>
-                        <select value={filters.education || ''} onChange={e => handleFilterChange('education', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todas</option>
-                            <option value="Fundamental">Fundamental</option>
-                            <option value="Medio">Médio</option>
-                            <option value="Superior">Superior</option>
-                            <option value="Pos">Pós-Graduação</option>
-                        </select>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Renda</label>
-                        <select value={filters.income || ''} onChange={e => handleFilterChange('income', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todas</option>
-                            <option value="Ate 1 SM">Até 1 SM</option>
-                            <option value="1 a 3 SM">1-3 SM</option>
-                            <option value="Acima de 10 SM">Alta Renda (&gt;10)</option>
-                        </select>
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Dor</label>
-                        <select value={filters.concern} onChange={e => handleFilterChange('concern', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2">
-                            <option value="">Todas</option>
-                            <option value="Seguranca">Segurança</option>
-                            <option value="Saude">Saúde</option>
-                            <option value="Educacao">Educação</option>
-                            <option value="Infraestrutura">Infraestrutura</option>
-                            <option value="Emprego">Emprego</option>
-                        </select>
-                    </div>
+                <div className="flex flex-nowrap overflow-x-auto sidebar-scroll pb-2 md:pb-0 gap-3">
+                    {dynamicQuestions.length === 0 && (
+                        <div className="text-xs text-slate-400 flex items-center h-[34px] px-2">Nenhum filtro disponível para esta pesquisa.</div>
+                    )}
+
+                    {dynamicQuestions.map(q => (
+                        <div key={q.name} className="space-y-1 shrink-0 w-[140px]">
+                            <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate block" title={q.label || q.name}>{q.label || q.name}</label>
+                            <select
+                                value={filters[q.name] || ''}
+                                onChange={e => handleFilterChange(q.name, e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:ring-[#4F46E5] py-1.5 focus:outline-none border px-2 text-slate-700 dark:text-slate-200"
+                            >
+                                <option value="">Todos</option>
+                                {q.options && q.options.map((opt: any, i: number) => (
+                                    <option key={i} value={typeof opt === 'string' ? opt : opt.value || opt.label}>{typeof opt === 'string' ? opt : opt.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                    ))}
                     <div className="flex items-end">
                         <button onClick={resetFilters} className="w-full h-[34px] flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition-colors text-xs font-semibold">
                             <span className="material-icons-round text-sm">filter_alt_off</span>
