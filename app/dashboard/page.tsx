@@ -64,61 +64,47 @@ export default function DashboardPage() {
     }, [selectedSurveyId])
 
     useEffect(() => {
-        const survey = surveys.find(s => s.id === selectedSurveyId)
-        if (!survey) return;
+        if (!rawData || rawData.length === 0) {
+            setDynamicQuestions([])
+            return
+        }
 
-        // 1. BLINDAGEM: Lê as perguntas não importa o nome da coluna no Supabase
-        const rawSchema = survey.questions_schema || survey.questions || survey.perguntas || survey.form_schema || []
+        // Lista de palavras que identificam campos abertos/pessoais que não servem para filtro
+        const invalidWords = ['nome', 'telefone', 'whatsapp', 'cpf', 'rg', 'email', 'qual seu nome']
 
-        let schemaArray: any[] = []
-        try {
-            if (typeof rawSchema === 'string') {
-                schemaArray = JSON.parse(rawSchema)
-            } else if (Array.isArray(rawSchema)) {
-                schemaArray = rawSchema
-            }
-        } catch (e) { console.error("Falha ao ler estrutura da pesquisa", e) }
+        // 1. Extração Direta (Auto-Discovery): Coletar todas as chaves de todos os eleitores
+        const allKeys = new Set<string>()
+        rawData.forEach(v => {
+            const ans = v.raw_data || v.respondent_data || {}
+            Object.keys(ans).forEach(key => allKeys.add(key))
+        })
 
-        if (schemaArray && schemaArray.length > 0) {
-            // Ignora campos de texto que não servem para filtro
-            const invalidTypes = ['text', 'textarea', 'email', 'number', 'tel', 'date']
+        // 2. Filtragem de Chaves
+        const validKeys = Array.from(allKeys).filter(key => {
+            const kLower = key.toLowerCase()
+            return !invalidWords.some(word => kLower.includes(word))
+        })
 
-            const filterable = schemaArray.filter((q: any) => {
-                const type = (q.type || 'text').toLowerCase()
-                return !invalidTypes.includes(type)
+        // 3. Renderização Dinâmica e Opções Reais
+        const questionsWithOptions = validKeys.map(key => {
+            const uniqueValues = new Set<string>()
+            rawData.forEach(v => {
+                const ans = v.raw_data || v.respondent_data || {}
+                const val = ans[key]
+                if (val && typeof val === 'string' && val.trim() !== '') {
+                    uniqueValues.add(val.trim())
+                }
             })
 
-            const questionsWithOptions = filterable.map((q: any) => {
-                let options = q.options || q.choices || q.opcoes || []
-                const filterKey = q.name || q.label || q.id
+            return {
+                filterKey: key,
+                label: key,
+                options: Array.from(uniqueValues).map(val => ({ label: val, value: val }))
+            }
+        }).filter(q => q.options.length > 0) // Só exibe o filtro se houver opções disponíveis
 
-                // Se não houver opções pré-definidas, extrai dinamicamente das respostas do eleitor
-                if (!Array.isArray(options) || options.length === 0) {
-                    const uniqueValues = new Set<string>()
-                    rawData.forEach(r => {
-                        const ans = r.raw_data || r.respondent_data || {}
-                        const val = ans[filterKey]
-                        if (val && typeof val === 'string' && val.trim() !== '') {
-                            uniqueValues.add(val.trim())
-                        }
-                    })
-                    options = Array.from(uniqueValues).map(val => ({ label: val, value: val }))
-                } else if (options.length > 0 && typeof options[0] === 'string') {
-                    options = options.map((opt: string) => ({ label: opt, value: opt }))
-                }
-
-                return {
-                    filterKey: filterKey,
-                    label: q.label || q.title || filterKey,
-                    options
-                }
-            }).filter((q: any) => q.options && q.options.length > 0)
-
-            setDynamicQuestions(questionsWithOptions)
-        } else {
-            setDynamicQuestions([])
-        }
-    }, [selectedSurveyId, surveys, rawData])
+        setDynamicQuestions(questionsWithOptions)
+    }, [rawData])
 
     const loadSurveys = async () => {
         try {
