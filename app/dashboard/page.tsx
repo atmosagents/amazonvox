@@ -384,157 +384,71 @@ export default function DashboardPage() {
                 <aside className="w-[340px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-30 shadow-xl shrink-0">
                     <div className="px-4 pt-4 shrink-0">
                         <div className="flex border-b border-slate-100 dark:border-slate-800">
-                            <button onClick={() => setActiveTab('map')}
-                                className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'map' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}
-                            >Map View</button>
-                            {/* CRM List made clickable */}
-                            <button
-                                onClick={() => setActiveTab('crm')}
-                                className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'crm' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}
-                            >CRM List</button>
+                            <button onClick={() => setActiveTab('map')} className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'map' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}>Map View</button>
+                            <button onClick={() => setActiveTab('crm')} className={`px-4 py-2 text-sm font-semibold transition-all ${activeTab === 'crm' ? 'text-[#4F46E5] border-b-2 border-[#4F46E5]' : 'text-slate-400 hover:text-slate-600'}`}>CRM List</button>
                         </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto sidebar-scroll p-4 space-y-4">
-                        {/* KPIs */}
                         <div className="grid grid-cols-2 gap-3">
                             <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#3B82F6]">
                                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Volume</p>
                                 <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-100">{totalVotes}</p>
-                                <p className="text-[10px] text-slate-500">Filtrados</p>
+                                <p className="text-[10px] text-slate-500">Respondentes Filtrados</p>
                             </div>
                             <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#10B981]">
-                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Líder</p>
-                                <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{leader.text}</p>
-                                <p className="text-[10px] text-slate-500">Dominância: {leader.dominance}</p>
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Status</p>
+                                <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{totalVotes > 0 ? 'Ativo' : '--'}</p>
+                                <p className="text-[10px] text-slate-500">Coleta em andamento</p>
                             </div>
                         </div>
 
-                        {/* CHART */}
                         <div className="glass-card p-5 rounded-xl shadow-sm">
-                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Distribuição</p>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Visão Geral Legada</p>
                             <div className="chart-container">
                                 {chartData && <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }} />}
                             </div>
                         </div>
-
-                        {/* PAIN POINTS */}
-                        <div className="glass-card p-5 rounded-xl shadow-sm">
-                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Dores da Região</p>
-                            <div className="space-y-4">
-                                {painPoints.length === 0 ? (
-                                    <p className="text-xs text-slate-400 text-center">Sem dados.</p>
-                                ) : (
-                                    painPoints.map((item, i) => {
-                                        const gradients = ['from-blue-500 to-indigo-600', 'from-emerald-400 to-emerald-600', 'from-amber-400 to-orange-500']
-                                        const grad = gradients[i % gradients.length]
-                                        return (
-                                            <div key={item.name}>
-                                                <div className="flex justify-between text-xs mb-1 dark:text-slate-300">
-                                                    <span className="font-medium text-slate-700 dark:text-slate-300">{item.name}</span>
-                                                    <span className="text-slate-500">{item.pct}%</span>
-                                                </div>
-                                                <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                                    <div className={`h-full bg-gradient-to-r ${grad}`} style={{ width: `${item.pct}%` }}></div>
-                                                </div>
-                                            </div>
-                                        )
-                                    })
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
-                        <button onClick={() => window.print()} className="w-full flex items-center justify-center space-x-2 bg-[#4F46E5] hover:bg-slate-700 text-white py-3 rounded-xl font-semibold transition-all">
-                            <span className="material-icons-round text-sm">print</span>
-                            <span>Relatório</span>
-                        </button>
                     </div>
                 </aside>
 
-                {/* CONTENT AREA (MAP or CRM) */}
+                {/* CONTENT AREA */}
                 <div className="flex-1 relative bg-slate-200 dark:bg-slate-800">
-
-                    {/* MAP VIEW */}
                     <div className={`w-full h-full relative ${activeTab === 'map' ? 'block' : 'hidden'}`}>
                         <div ref={mapRef} id="map" className="w-full h-full"></div>
-
-                        {/* Map Controls */}
                         <div className="absolute top-6 left-6 space-y-2 z-10">
                             <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-1.5 rounded-xl shadow-xl flex flex-col space-y-1">
-                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) + 1)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><span className="material-icons-round">add</span></button>
-                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) - 1)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-600 dark:text-slate-300"><span className="material-icons-round">remove</span></button>
-                                <div className="h-px bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                <button onClick={toggleHeatmap} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg group text-slate-600 dark:text-slate-300 group-hover:text-red-500"><span className="material-icons-round">local_fire_department</span></button>
-                            </div>
-                        </div>
-
-                        {/* Legend */}
-                        <div className="absolute bottom-6 left-6 z-10">
-                            <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-4 rounded-2xl shadow-2xl border border-white dark:border-slate-800 space-y-3 min-w-[180px]">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 dark:border-slate-800 pb-2 mb-2">Legenda</p>
-                                <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleFilterChange('candidate', '1')}>
-                                    <span className="w-3 h-3 rounded-full bg-[#3B82F6] shadow-sm"></span>
-                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Candidato Azul</span>
-                                </div>
-                                <div className="flex items-center space-x-3 cursor-pointer" onClick={() => handleFilterChange('candidate', '2')}>
-                                    <span className="w-3 h-3 rounded-full bg-[#10B981] shadow-sm"></span>
-                                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">Candidato Verde</span>
-                                </div>
+                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) + 1)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600"><span className="material-icons-round">add</span></button>
+                                <button onClick={() => mapInstance.current?.setZoom((mapInstance.current?.getZoom() || 12) - 1)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-600"><span className="material-icons-round">remove</span></button>
+                                <div className="h-px bg-slate-200 mx-2"></div>
+                                <button onClick={toggleHeatmap} className="p-2 hover:bg-slate-100 rounded-lg group text-slate-600 group-hover:text-red-500"><span className="material-icons-round">local_fire_department</span></button>
                             </div>
                         </div>
                     </div>
 
-                    {/* CRM VIEW (Integrated Table) */}
                     <div className={`w-full h-full flex flex-col p-6 overflow-hidden ${activeTab === 'crm' ? 'flex' : 'hidden'}`}>
-                        <div className="shrink-0 mb-4 bg-white dark:bg-slate-900 p-3 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700 flex gap-2">
+                        <div className="shrink-0 mb-4 bg-white p-3 rounded-xl shadow-sm border flex gap-2">
                             <div className="relative flex-1">
-                                <span className="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
-                                <input
-                                    type="text"
-                                    value={crmSearchTerm}
-                                    onChange={(e) => setCrmSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-sm focus:ring-2 focus:ring-[#4F46E5]/20 outline-none text-slate-700 dark:text-slate-200"
-                                    placeholder="Buscar eleitor na lista..."
-                                />
+                                <span className="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">search</span>
+                                <input type="text" value={crmSearchTerm} onChange={(e) => setCrmSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg text-sm outline-none" placeholder="Buscar eleitor por nome ou resposta..." />
                             </div>
                         </div>
-
-                        <div className="flex-1 overflow-auto bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 relative no-scrollbar">
-                            <table className="min-w-full divide-y divide-slate-100 dark:divide-slate-800">
-                                <thead className="bg-slate-50 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
+                        <div className="flex-1 overflow-auto bg-white rounded-xl shadow-lg border relative no-scrollbar">
+                            <table className="min-w-full divide-y divide-slate-100">
+                                <thead className="bg-slate-50 sticky top-0 z-10">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Eleitor</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perfil</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dor</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voto</th>
-                                        <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ação</th>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Identificação</th>
+                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Resumo dos Dados (JSON)</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                                <tbody className="divide-y divide-slate-50">
                                     {crmData.length === 0 ? (
-                                        <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nenhum eleitor encontrado.</td></tr>
+                                        <tr><td colSpan={2} className="text-center py-8 text-slate-400">Nenhum dado encontrado.</td></tr>
                                     ) : (
                                         crmData.map(v => (
-                                            <tr key={v.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition">
-                                                <td className="px-4 py-3">
-                                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{v.voter_name}</div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="text-xs text-slate-500">{v.voter_gender} • {v.voter_age_range}</div>
-                                                </td>
-                                                <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-400">{v.main_concern}</td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`text-xs font-bold ${v.candidate_id === 1 ? 'text-[#3B82F6]' : 'text-[#10B981]'}`}>{v.candidate_id === 1 ? 'Azul' : 'Verde'}</span>
-                                                </td>
-                                                <td className="px-4 py-3 text-center">
-                                                    {v.voter_whatsapp && (
-                                                        <a href={`https://wa.me/55${v.voter_whatsapp}`} target="_blank" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-400">
-                                                            <span className="material-icons-round text-sm">chat</span>
-                                                        </a>
-                                                    )}
-                                                </td>
+                                            <tr key={v.id} className="hover:bg-slate-50 transition">
+                                                <td className="px-4 py-3 text-sm font-semibold text-slate-800">{v.voter_name || 'Eleitor Dinâmico'}</td>
+                                                <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-md">{JSON.stringify(v.raw_data || v.respondent_data || {})}</td>
                                             </tr>
                                         ))
                                     )}
@@ -542,7 +456,6 @@ export default function DashboardPage() {
                             </table>
                         </div>
                     </div>
-
                 </div>
             </main>
         </div>
