@@ -404,15 +404,15 @@ export default function DashboardPage() {
                                 <p className="text-[10px] text-slate-500">Filtrados</p>
                             </div>
                             <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#10B981]">
-                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">L├¡der</p>
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Líder</p>
                                 <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{leader.text}</p>
-                                <p className="text-[10px] text-slate-500">Domin├óncia: {leader.dominance}</p>
+                                <p className="text-[10px] text-slate-500">Dominância: {leader.dominance}</p>
                             </div>
                         </div>
 
                         {/* CHART */}
                         <div className="glass-card p-5 rounded-xl shadow-sm">
-                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Distribui├º├úo</p>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Distribuição</p>
                             <div className="chart-container">
                                 {chartData && <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }} />}
                             </div>
@@ -420,7 +420,7 @@ export default function DashboardPage() {
 
                         {/* PAIN POINTS */}
                         <div className="glass-card p-5 rounded-xl shadow-sm">
-                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Dores da Regi├úo</p>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Dores da Região</p>
                             <div className="space-y-4">
                                 {painPoints.length === 0 ? (
                                     <p className="text-xs text-slate-400 text-center">Sem dados.</p>
@@ -448,7 +448,7 @@ export default function DashboardPage() {
                     <div className="p-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
                         <button onClick={() => window.print()} className="w-full flex items-center justify-center space-x-2 bg-[#4F46E5] hover:bg-slate-700 text-white py-3 rounded-xl font-semibold transition-all">
                             <span className="material-icons-round text-sm">print</span>
-                            <span>Relat├│rio</span>
+                            <span>Relatório</span>
                         </button>
                     </div>
                 </aside>
@@ -509,7 +509,7 @@ export default function DashboardPage() {
                                         <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Perfil</th>
                                         <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Dor</th>
                                         <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">Voto</th>
-                                        <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">A├º├úo</th>
+                                        <th className="px-4 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ação</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
@@ -522,7 +522,7 @@ export default function DashboardPage() {
                                                     <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{v.voter_name}</div>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <div className="text-xs text-slate-500">{v.voter_gender} ÔÇó {v.voter_age_range}</div>
+                                                    <div className="text-xs text-slate-500">{v.voter_gender} • {v.voter_age_range}</div>
                                                 </td>
                                                 <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-400">{v.main_concern}</td>
                                                 <td className="px-4 py-3">
