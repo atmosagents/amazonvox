@@ -10,7 +10,7 @@ import {
     Tooltip,
     Legend
 } from 'chart.js'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
@@ -302,7 +302,7 @@ export default function DashboardPage() {
         try {
             const element = document.getElementById('pdf-report-container')
             if (element) {
-                const canvas = await html2canvas(element, { scale: 2, useCORS: true })
+                const canvas = await html2canvas(element, { scale: 2, useCORS: true, allowTaint: true })
                 const imgData = canvas.toDataURL('image/png')
                 const pdf = new jsPDF({
                     orientation: 'landscape',
@@ -312,9 +312,9 @@ export default function DashboardPage() {
                 pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height)
                 pdf.save('Relatorio_VoxGeo_Intencao_Votos.pdf')
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Erro ao gerar PDF:', error)
-            alert('Ocorreu um erro ao gerar o relatório.')
+            alert('Erro ao gerar PDF: ' + error.message)
         } finally {
             setIsGeneratingPdf(false)
         }
