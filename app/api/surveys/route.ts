@@ -55,18 +55,35 @@ export async function GET() {
 
         if (error) throw error
 
+        // Parse questions schema to JSON if it comes as a string from Supabase
+        const parsedData = (data || []).map((survey: any) => {
+            let schema = survey.questions_schema || survey.form_schema || survey.perguntas || survey.questions || [];
+            if (typeof schema === 'string') {
+                try {
+                    schema = JSON.parse(schema);
+                } catch (e) {
+                    console.error('Failed to parse schema for survey', survey.id);
+                    schema = [];
+                }
+            }
+            return {
+                ...survey,
+                questions_schema: schema
+            };
+        });
+
         // Inject Legacy Option
         const legacy = {
             id: 'legacy',
             title: 'Pesquisa Original (Legado)',
             slug: 'legacy',
-            description: 'Dados históricos da tabela original',
+            description: 'Dados históricos da tabela original (Sem Formulário Dinâmico)',
             questions_schema: [],
             created_at: new Date(0).toISOString(), // Oldest
             active: true
         }
 
-        const combined = [legacy, ...(data || [])]
+        const combined = [legacy, ...parsedData]
 
         return NextResponse.json(combined)
     } catch (e: any) {
