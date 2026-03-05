@@ -10,13 +10,17 @@ import {
     Tooltip,
     Legend
 } from 'chart.js'
+import jsPDF from 'jspdf'
+import html2canvas from 'html2canvas'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 export default function DashboardPage() {
+    // -- STATE --
     const [activeTab, setActiveTab] = useState<'map' | 'crm'>('map')
     const [lastUpdate, setLastUpdate] = useState('Conectando...')
     const [darkMode, setDarkMode] = useState(false)
+    const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
 
     const [surveys, setSurveys] = useState<any[]>([])
     const [selectedSurveyId, setSelectedSurveyId] = useState('')
@@ -293,6 +297,29 @@ export default function DashboardPage() {
         return v.voter_name?.toLowerCase().includes(lower) || JSON.stringify(v.raw_data || v.respondent_data || {}).toLowerCase().includes(lower)
     })
 
+    const exportToPDF = async () => {
+        setIsGeneratingPdf(true)
+        try {
+            const element = document.getElementById('pdf-report-container')
+            if (element) {
+                const canvas = await html2canvas(element, { scale: 2, useCORS: true })
+                const imgData = canvas.toDataURL('image/png')
+                const pdf = new jsPDF({
+                    orientation: 'landscape',
+                    unit: 'px',
+                    format: [canvas.width, canvas.height]
+                })
+                pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height)
+                pdf.save('Relatorio_VoxGeo_Intencao_Votos.pdf')
+            }
+        } catch (error) {
+            console.error('Erro ao gerar PDF:', error)
+            alert('Ocorreu um erro ao gerar o relatório.')
+        } finally {
+            setIsGeneratingPdf(false)
+        }
+    }
+
     return (
         <div className="bg-[#F8FAFC] dark:bg-[#0F172A] font-sans text-slate-800 dark:text-slate-100 transition-colors duration-300 h-screen overflow-hidden flex flex-col">
             <style jsx global>{`
@@ -371,7 +398,7 @@ export default function DashboardPage() {
                 </div>
             </div>
 
-            <main className="flex flex-1 overflow-hidden relative">
+            <main id="pdf-report-container" className="flex flex-1 overflow-hidden relative">
                 <aside className="w-[340px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-30 shadow-xl shrink-0">
                     <div className="px-4 pt-4 shrink-0">
                         <div className="flex border-b border-slate-100 dark:border-slate-800">
@@ -404,6 +431,18 @@ export default function DashboardPage() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Botão de PDF */}
+                        <button
+                            onClick={exportToPDF}
+                            disabled={isGeneratingPdf}
+                            className={`w-full py-3 rounded-xl flex items-center justify-center space-x-2 font-bold text-sm transition-all mt-4 ${isGeneratingPdf ? 'bg-slate-300 dark:bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-[#1E1B4B] hover:bg-slate-800 dark:hover:bg-indigo-900 text-white shadow-md'}`}
+                        >
+                            <span className="material-icons-round text-[18px]">
+                                {isGeneratingPdf ? 'hourglass_empty' : 'picture_as_pdf'}
+                            </span>
+                            <span>{isGeneratingPdf ? 'Gerando PDF...' : 'Gerar Relatório'}</span>
+                        </button>
                     </div>
                 </aside>
 
