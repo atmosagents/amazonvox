@@ -14,12 +14,10 @@ import {
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 export default function DashboardPage() {
-    // -- STATE --
     const [activeTab, setActiveTab] = useState<'map' | 'crm'>('map')
     const [lastUpdate, setLastUpdate] = useState('Conectando...')
     const [darkMode, setDarkMode] = useState(false)
 
-    // Data & Filters
     const [surveys, setSurveys] = useState<any[]>([])
     const [selectedSurveyId, setSelectedSurveyId] = useState('')
     const [rawData, setRawData] = useState<any[]>([])
@@ -28,31 +26,23 @@ export default function DashboardPage() {
     const [dynamicQuestions, setDynamicQuestions] = useState<any[]>([])
     const [searchTerm, setSearchTerm] = useState('')
 
-    // Visuals State
     const [totalVotes, setTotalVotes] = useState(0)
     const [leader, setLeader] = useState({ text: '--', color: 'text-slate-500', dominance: '--%' })
     const [chartData, setChartData] = useState<any>(null)
-    const [painPoints, setPainPoints] = useState<any[]>([])
 
-    // Map State
     const mapRef = useRef<HTMLDivElement>(null)
     const mapInstance = useRef<google.maps.Map | null>(null)
     const heatmapInstance = useRef<google.maps.visualization.HeatmapLayer | null>(null)
     const markersRef = useRef<google.maps.Marker[]>([])
     const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
 
-    // CRM Search
     const [crmSearchTerm, setCrmSearchTerm] = useState('')
 
-    // Constants
-    const C1_COLOR = '#3B82F6'
-    const C2_COLOR = '#10B981'
+    // Paleta de Cores Dinâmicas para Mapa e Gráfico
+    const CHART_COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6']
 
-    // -- EFFECTS --
     useEffect(() => {
-        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-            setDarkMode(true)
-        }
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setDarkMode(true)
         loadSurveys()
     }, [])
 
@@ -69,42 +59,39 @@ export default function DashboardPage() {
             return
         }
 
-        // Lista de palavras que identificam campos abertos/pessoais que não servem para filtro
-        const invalidWords = ['nome', 'telefone', 'whatsapp', 'cpf', 'rg', 'email', 'qual seu nome']
+        const validFilters: any[] = []
+        const ignoreWords = ['nome', 'telefone', 'whatsapp', 'cpf', 'rg', 'email']
 
-        // 1. Extração Direta (Auto-Discovery): Coletar todas as chaves de todos os eleitores
-        const allKeys = new Set<string>()
-        rawData.forEach(v => {
-            const ans = v.raw_data || v.respondent_data || {}
-            Object.keys(ans).forEach(key => allKeys.add(key))
+        const actualKeys = new Set<string>()
+        rawData.forEach(r => {
+            const ans = r.raw_data || r.respondent_data || {}
+            Object.keys(ans).forEach(k => actualKeys.add(k))
         })
 
-        // 2. Filtragem de Chaves
-        const validKeys = Array.from(allKeys).filter(key => {
-            const kLower = key.toLowerCase()
-            return !invalidWords.some(word => kLower.includes(word))
-        })
+        actualKeys.forEach(key => {
+            const keyLower = key.toLowerCase()
+            if (ignoreWords.some(w => keyLower.includes(w))) return
 
-        // 3. Renderização Dinâmica e Opções Reais
-        const questionsWithOptions = validKeys.map(key => {
             const uniqueValues = new Set<string>()
-            rawData.forEach(v => {
-                const ans = v.raw_data || v.respondent_data || {}
+            rawData.forEach(r => {
+                const ans = r.raw_data || r.respondent_data || {}
                 const val = ans[key]
                 if (val && typeof val === 'string' && val.trim() !== '') {
                     uniqueValues.add(val.trim())
                 }
             })
 
-            return {
-                filterKey: key,
-                label: key,
-                options: Array.from(uniqueValues).map(val => ({ label: val, value: val }))
+            if (uniqueValues.size > 0) {
+                validFilters.push({
+                    filterKey: key,
+                    label: key,
+                    options: Array.from(uniqueValues).map(v => ({ label: v, value: v }))
+                })
             }
-        }).filter(q => q.options.length > 0) // Só exibe o filtro se houver opções disponíveis
+        })
 
-        setDynamicQuestions(questionsWithOptions)
-    }, [rawData])
+        setDynamicQuestions(validFilters)
+    }, [selectedSurveyId, rawData])
 
     const loadSurveys = async () => {
         try {
@@ -113,7 +100,7 @@ export default function DashboardPage() {
             const data = await res.json()
             if (Array.isArray(data) && data.length > 0) {
                 setSurveys(data)
-                setSelectedSurveyId(data[data.length - 1].id) // Puxa a pesquisa mais recente
+                setSelectedSurveyId(data[data.length - 1].id)
             }
         } catch (e) {
             setSurveys([{ id: 'legacy', title: 'Erro ao carregar (Offline)', slug: 'legacy' }])
@@ -121,25 +108,18 @@ export default function DashboardPage() {
     }
 
     useEffect(() => {
-        if (darkMode) {
-            document.documentElement.classList.add('dark')
-        } else {
-            document.documentElement.classList.remove('dark')
-        }
+        if (darkMode) document.documentElement.classList.add('dark')
+        else document.documentElement.classList.remove('dark')
     }, [darkMode])
 
-    useEffect(() => {
-        applyFilters()
-    }, [rawData, filters])
+    useEffect(() => { applyFilters() }, [rawData, filters])
 
+    // Atualiza gráficos e mapa sempre que os filtros ou perguntas mudarem
     useEffect(() => {
         updateVisuals()
-        if (mapInstance.current) {
-            updateMap()
-        }
-    }, [filteredData])
+        if (mapInstance.current) updateMap()
+    }, [filteredData, dynamicQuestions])
 
-    // -- LOAD DATA --
     const loadData = async (surveyId: string | null) => {
         try {
             const url = surveyId && surveyId !== 'legacy' ? `/api/voters?survey_id=${surveyId}` : '/api/voters'
@@ -152,16 +132,13 @@ export default function DashboardPage() {
         }
     }
 
-    // -- FILTERING DINÂMICO --
     const applyFilters = () => {
         let res = [...rawData]
-
         Object.keys(filters).forEach(key => {
             const filterValue = filters[key]
             if (filterValue) {
                 res = res.filter(v => {
                     const ans = v.raw_data || v.respondent_data || {}
-                    // Compara a resposta exata do JSON com o filtro selecionado no topo
                     return String(ans[key]) === String(filterValue)
                 })
             }
@@ -172,36 +149,65 @@ export default function DashboardPage() {
     const resetFilters = () => setFilters({})
     const handleFilterChange = (key: string, value: string) => setFilters(prev => ({ ...prev, [key]: value }))
 
-    // -- VISUALS UPDATE --
+    // =========================================================================
+    // NOVO MOTOR DE GRÁFICOS (Inteligência Dinâmica)
+    // =========================================================================
     const updateVisuals = () => {
         const total = filteredData.length
         setTotalVotes(total)
 
-        // Lógica de Gráfico mantida temporariamente para dados legados (candidate_id)
-        if (total === 0) {
+        if (total === 0 || dynamicQuestions.length === 0) {
             setLeader({ text: '--', color: 'text-slate-500', dominance: 'Sem dados' })
-        } else {
-            const c1 = filteredData.filter(v => v.candidate_id === 1).length
-            const c2 = filteredData.filter(v => v.candidate_id === 2).length
-            if (c1 > c2) setLeader({ text: 'Azul', color: 'text-[#3B82F6]', dominance: `${((c1 / total) * 100).toFixed(0)}%` })
-            else if (c2 > c1) setLeader({ text: 'Verde', color: 'text-[#10B981]', dominance: `${((c2 / total) * 100).toFixed(0)}%` })
-            else setLeader({ text: 'Empate', color: 'text-slate-500', dominance: '50/50' })
+            setChartData(null)
+            return
+        }
+
+        // Tenta achar a pergunta principal de Voto (pela palavra votar/prefeito/candidato), ou pega a 1ª
+        let mainQuestion = dynamicQuestions.find(q => q.label.toLowerCase().includes('votar') || q.label.toLowerCase().includes('candidato') || q.label.toLowerCase().includes('prefeito'))
+        if (!mainQuestion) mainQuestion = dynamicQuestions[0]
+
+        const key = mainQuestion.filterKey
+        const counts: Record<string, number> = {}
+
+        filteredData.forEach(v => {
+            const ans = v.raw_data || v.respondent_data || {}
+            const val = ans[key]
+            if (val && typeof val === 'string' && val.trim() !== '') {
+                counts[val] = (counts[val] || 0) + 1
+            }
+        })
+
+        const sortedCounts = Object.entries(counts).sort((a, b) => b[1] - a[1])
+
+        if (sortedCounts.length > 0) {
+            const topLabel = sortedCounts[0][0]
+            const topCount = sortedCounts[0][1]
+            setLeader({ text: topLabel, color: 'text-[#4F46E5]', dominance: `${((topCount / total) * 100).toFixed(0)}%` })
+
+            const labels = sortedCounts.map(item => item[0])
+            const data = sortedCounts.map(item => item[1])
 
             setChartData({
-                labels: ['Azul', 'Verde'],
-                datasets: [{ data: [c1, c2], backgroundColor: [C1_COLOR, C2_COLOR], borderWidth: 0 }],
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: CHART_COLORS.slice(0, labels.length),
+                    borderWidth: 0
+                }]
             })
+        } else {
+            setLeader({ text: '--', color: 'text-slate-500', dominance: 'Sem dados' })
+            setChartData(null)
         }
     }
 
-    // -- MAP LOGIC --
+    // =========================================================================
+    // MAPA COM CORES DINÂMICAS BASEADAS NO GRÁFICO
+    // =========================================================================
     const initMap = async () => {
         if (!mapRef.current) return
         mapInstance.current = new google.maps.Map(mapRef.current, {
-            zoom: 12,
-            center: { lat: -23.1857, lng: -46.8978 },
-            disableDefaultUI: true,
-            styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }]
+            zoom: 12, center: { lat: -23.1857, lng: -46.8978 }, disableDefaultUI: true, styles: [{ featureType: "poi", stylers: [{ visibility: "off" }] }]
         })
         infoWindowRef.current = new google.maps.InfoWindow({ pixelOffset: new google.maps.Size(0, -10) })
         if (filteredData.length > 0) updateMap()
@@ -209,24 +215,34 @@ export default function DashboardPage() {
 
     const updateMap = () => {
         if (!mapInstance.current) return
-
         markersRef.current.forEach(m => m.setMap(null))
         markersRef.current = []
         if (heatmapInstance.current) heatmapInstance.current.setMap(null)
 
+        // Pega a mesma pergunta principal que o gráfico usa para sincronizar as cores
+        let mainQuestion = dynamicQuestions.find(q => q.label.toLowerCase().includes('votar') || q.label.toLowerCase().includes('candidato') || q.label.toLowerCase().includes('prefeito'))
+        if (!mainQuestion && dynamicQuestions.length > 0) mainQuestion = dynamicQuestions[0]
+
         markersRef.current = filteredData.map(v => {
-            const color = v.candidate_id === 1 ? C1_COLOR : C2_COLOR
+            const ans = v.raw_data || v.respondent_data || {}
+
+            // Define a cor do Pin baseado na resposta
+            let pinColor = CHART_COLORS[0]
+            if (mainQuestion) {
+                const userAns = ans[mainQuestion.filterKey]
+                const optIndex = mainQuestion.options.findIndex((o: any) => o.value === userAns)
+                if (optIndex >= 0) pinColor = CHART_COLORS[optIndex % CHART_COLORS.length]
+            }
+
             const marker = new google.maps.Marker({
                 position: { lat: parseFloat(v.latitude), lng: parseFloat(v.longitude) },
                 map: mapInstance.current,
-                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: color, fillOpacity: 1, strokeWeight: 2, strokeColor: '#fff' }
+                icon: { path: google.maps.SymbolPath.CIRCLE, scale: 6, fillColor: pinColor, fillOpacity: 1, strokeWeight: 2, strokeColor: '#fff' }
             })
 
             marker.addListener('click', () => {
                 if (!infoWindowRef.current || !mapInstance.current) return
-
                 let dynamicContentHtml = ''
-                const ans = v.raw_data || v.respondent_data || {}
 
                 Object.entries(ans).forEach(([key, val]) => {
                     if (!val || typeof val !== 'string' || val.trim() === '' || key.toLowerCase() === 'whatsapp') return;
@@ -240,16 +256,12 @@ export default function DashboardPage() {
 
                 const phoneField = v.voter_whatsapp || ans['Whatsapp'] || ans['Telefone'] || ans['telefone']
                 const cleanPhone = phoneField ? String(phoneField).replace(/\D/g, '') : ''
-                const waButtonHtml = cleanPhone ? `
-                        <a href="https://wa.me/55${cleanPhone}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2.5 rounded-lg hover:bg-green-600 transition flex items-center justify-center gap-1 mt-3 shadow-md" style="text-decoration:none;">
-                            CHAMAR NO WHATSAPP
-                        </a>
-                ` : ''
+                const waButtonHtml = cleanPhone ? `<a href="https://wa.me/55${cleanPhone}" target="_blank" class="block w-full text-center bg-green-500 text-white text-xs font-bold py-2.5 rounded-lg hover:bg-green-600 transition flex items-center justify-center gap-1 mt-3 shadow-md" style="text-decoration:none;">CHAMAR NO WHATSAPP</a>` : ''
 
                 const content = `
                     <div class="p-2 font-sans min-w-[220px] max-w-[260px] max-h-[300px] overflow-y-auto sidebar-scroll">
                         <div class="font-bold text-gray-800 mb-2 flex justify-between items-center border-b pb-2">
-                            <span class="truncate pr-2 text-sm">${v.voter_name || ans['QUAL SEU NOME?'] || ans['Nome'] || 'Eleitor'}</span>
+                            <span class="truncate pr-2 text-sm">${v.voter_name || ans['QUAL SEU NOME?'] || ans['Nome'] || ans['NOME'] || 'Eleitor'}</span>
                             <span class="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-2 py-0.5 rounded-full border border-indigo-100">Id: ${v.id}</span>
                         </div>
                         ${dynamicContentHtml}
@@ -278,7 +290,7 @@ export default function DashboardPage() {
     const crmData = filteredData.filter(v => {
         if (!crmSearchTerm) return true
         const lower = crmSearchTerm.toLowerCase()
-        return v.voter_name?.toLowerCase().includes(lower) || JSON.stringify(v.raw_data || {}).toLowerCase().includes(lower)
+        return v.voter_name?.toLowerCase().includes(lower) || JSON.stringify(v.raw_data || v.respondent_data || {}).toLowerCase().includes(lower)
     })
 
     return (
@@ -296,7 +308,6 @@ export default function DashboardPage() {
 
             <Script src={`https://maps.googleapis.com/maps/api/js?key=AIzaSyBfJgYGDKPfWGbVnbnkipVFEgq12465cJk&libraries=visualization,places`} async defer onReady={() => { initMap() }} />
 
-            {/* HEADER */}
             <header className="h-16 px-6 bg-[#1E1B4B] flex items-center justify-between shadow-2xl shrink-0 z-50">
                 <div className="flex items-center space-x-2">
                     <span className="text-white font-bold text-xl tracking-tight">Vox<span className="text-[#3B82F6]">Geo</span></span>
@@ -305,11 +316,7 @@ export default function DashboardPage() {
 
                 <div className="hidden md:flex items-center bg-white/10 rounded-lg px-3 py-1 border border-white/10 mx-4 flex-1 max-w-sm">
                     <span className="material-icons-round text-indigo-400 text-sm mr-2">poll</span>
-                    <select
-                        value={selectedSurveyId}
-                        onChange={e => setSelectedSurveyId(e.target.value)}
-                        className="bg-transparent border-none text-xs font-bold text-white focus:ring-0 cursor-pointer w-full outline-none [&>option]:text-slate-800"
-                    >
+                    <select value={selectedSurveyId} onChange={e => setSelectedSurveyId(e.target.value)} className="bg-transparent border-none text-xs font-bold text-white focus:ring-0 cursor-pointer w-full outline-none [&>option]:text-slate-800">
                         {surveys.length === 0 && <option value="">Carregando pesquisas...</option>}
                         {surveys.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
                     </select>
@@ -331,15 +338,14 @@ export default function DashboardPage() {
                 </div>
             </header>
 
-            {/* FILTERS BAR: AGORA 100% DINÂMICO E LINKADO AO MAPA */}
             <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 shadow-sm shrink-0 z-40">
                 <div className="flex flex-nowrap overflow-x-auto sidebar-scroll pb-2 md:pb-0 gap-3">
                     {dynamicQuestions.length === 0 && (
-                        <div className="text-xs text-slate-400 flex items-center h-[34px] px-2 font-medium">Nenhum filtro categórico configurado para esta pesquisa.</div>
+                        <div className="text-xs text-slate-400 flex items-center h-[34px] px-2 font-medium">Aguardando respostas para gerar os filtros...</div>
                     )}
 
                     {dynamicQuestions.map(q => (
-                        <div key={q.filterKey} className="space-y-1 shrink-0 w-[180px]">
+                        <div key={q.filterKey} className="space-y-1 shrink-0 w-[200px]">
                             <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate block" title={q.label}>{q.label}</label>
                             <select
                                 value={filters[q.filterKey] || ''}
@@ -366,7 +372,6 @@ export default function DashboardPage() {
             </div>
 
             <main className="flex flex-1 overflow-hidden relative">
-                {/* SIDEBAR */}
                 <aside className="w-[340px] bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-30 shadow-xl shrink-0">
                     <div className="px-4 pt-4 shrink-0">
                         <div className="flex border-b border-slate-100 dark:border-slate-800">
@@ -380,25 +385,28 @@ export default function DashboardPage() {
                             <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#3B82F6]">
                                 <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Volume</p>
                                 <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-slate-100">{totalVotes}</p>
-                                <p className="text-[10px] text-slate-500">Respondentes Filtrados</p>
+                                <p className="text-[10px] text-slate-500">Respondentes</p>
                             </div>
                             <div className="glass-card p-4 rounded-xl shadow-sm border-l-4 border-l-[#10B981]">
-                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Status</p>
-                                <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{totalVotes > 0 ? 'Ativo' : '--'}</p>
-                                <p className="text-[10px] text-slate-500">Coleta em andamento</p>
+                                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">Líder do Filtro</p>
+                                <p className={`text-xl font-bold mt-1 truncate ${leader.color}`}>{leader.text}</p>
+                                <p className="text-[10px] text-slate-500">{leader.dominance}</p>
                             </div>
                         </div>
 
                         <div className="glass-card p-5 rounded-xl shadow-sm">
-                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Visão Geral Legada</p>
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase mb-4">Intenção Geral</p>
                             <div className="chart-container">
-                                {chartData && <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }} />}
+                                {chartData ? (
+                                    <Doughnut data={chartData} options={{ responsive: true, maintainAspectRatio: false, cutout: '75%', plugins: { legend: { display: false } } }} />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full text-xs text-slate-400">Sem dados para análise</div>
+                                )}
                             </div>
                         </div>
                     </div>
                 </aside>
 
-                {/* CONTENT AREA */}
                 <div className="flex-1 relative bg-slate-200 dark:bg-slate-800">
                     <div className={`w-full h-full relative ${activeTab === 'map' ? 'block' : 'hidden'}`}>
                         <div ref={mapRef} id="map" className="w-full h-full"></div>
@@ -412,6 +420,9 @@ export default function DashboardPage() {
                         </div>
                     </div>
 
+                    {/* ========================================================================= */}
+                    {/* CRM LIST - AGORA FORMATADA E PROFISSIONAL */}
+                    {/* ========================================================================= */}
                     <div className={`w-full h-full flex flex-col p-6 overflow-hidden ${activeTab === 'crm' ? 'flex' : 'hidden'}`}>
                         <div className="shrink-0 mb-4 bg-white p-3 rounded-xl shadow-sm border flex gap-2">
                             <div className="relative flex-1">
@@ -419,24 +430,53 @@ export default function DashboardPage() {
                                 <input type="text" value={crmSearchTerm} onChange={(e) => setCrmSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg text-sm outline-none" placeholder="Buscar eleitor por nome ou resposta..." />
                             </div>
                         </div>
-                        <div className="flex-1 overflow-auto bg-white rounded-xl shadow-lg border relative no-scrollbar">
+                        <div className="flex-1 overflow-auto bg-white rounded-xl shadow-lg border relative sidebar-scroll">
                             <table className="min-w-full divide-y divide-slate-100">
-                                <thead className="bg-slate-50 sticky top-0 z-10">
+                                <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Identificação</th>
-                                        <th className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase">Resumo dos Dados (JSON)</th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider w-1/4">Eleitor / Contato</th>
+                                        <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Respostas da Pesquisa</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-50">
+                                <tbody className="divide-y divide-slate-100">
                                     {crmData.length === 0 ? (
-                                        <tr><td colSpan={2} className="text-center py-8 text-slate-400">Nenhum dado encontrado.</td></tr>
+                                        <tr><td colSpan={2} className="text-center py-12 text-slate-400 font-medium">Nenhum eleitor encontrado na base.</td></tr>
                                     ) : (
-                                        crmData.map(v => (
-                                            <tr key={v.id} className="hover:bg-slate-50 transition">
-                                                <td className="px-4 py-3 text-sm font-semibold text-slate-800">{v.voter_name || 'Eleitor Dinâmico'}</td>
-                                                <td className="px-4 py-3 text-xs text-slate-500 truncate max-w-md">{JSON.stringify(v.raw_data || v.respondent_data || {})}</td>
-                                            </tr>
-                                        ))
+                                        crmData.map(v => {
+                                            const ans = v.raw_data || v.respondent_data || {};
+                                            const name = v.voter_name || ans['QUAL SEU NOME?'] || ans['Nome'] || ans['NOME'] || 'Anônimo';
+                                            const phone = v.voter_whatsapp || ans['Whatsapp'] || ans['Telefone'] || ans['telefone'];
+
+                                            return (
+                                                <tr key={v.id} className="hover:bg-slate-50/80 transition-colors">
+                                                    <td className="px-6 py-4 align-top">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-bold text-slate-800">{name}</span>
+                                                            <span className="text-xs text-slate-400 mt-1">ID: {v.id}</span>
+                                                            {phone && (
+                                                                <a href={`https://wa.me/55${String(phone).replace(/\D/g, '')}`} target="_blank" className="mt-2 inline-flex items-center text-xs font-bold text-emerald-600 hover:text-emerald-700">
+                                                                    <span className="material-icons-round text-sm mr-1">whatsapp</span>
+                                                                    Contatar
+                                                                </a>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                            {Object.entries(ans).map(([k, val], idx) => {
+                                                                if (!val || typeof val !== 'string' || val.trim() === '' || k.toLowerCase().includes('whatsapp') || k.toLowerCase() === 'nome') return null;
+                                                                return (
+                                                                    <div key={idx} className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 flex flex-col">
+                                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{k}</span>
+                                                                        <span className="text-xs font-medium text-slate-700">{val}</span>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })
                                     )}
                                 </tbody>
                             </table>
