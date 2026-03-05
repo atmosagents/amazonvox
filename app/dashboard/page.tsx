@@ -11,6 +11,7 @@ import {
     Legend
 } from 'chart.js'
 import { jsPDF } from 'jspdf'
+import autoTable from 'jspdf-autotable'
 import { toPng } from 'html-to-image'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
@@ -300,25 +301,84 @@ export default function DashboardPage() {
     const exportToPDF = async () => {
         setIsGeneratingPdf(true)
         try {
-            const element = document.getElementById('pdf-report-container')
-            if (element) {
-                const dataUrl = await toPng(element, {
-                    cacheBust: true,
-                    pixelRatio: 2,
-                    backgroundColor: darkMode ? '#0F172A' : '#F8FAFC',
-                    filter: (node) => {
-                        if (node.tagName === 'BUTTON' && node.innerText && node.innerText.includes('Gerando')) return false;
-                        return true;
+            if (activeTab === 'map') {
+                const element = document.getElementById('pdf-report-container')
+                if (element) {
+                    const dataUrl = await toPng(element, {
+                        cacheBust: true,
+                        pixelRatio: 2,
+                        backgroundColor: darkMode ? '#0F172A' : '#F8FAFC',
+                        filter: (node) => {
+                            if (node.tagName === 'BUTTON' && node.innerText && node.innerText.includes('Gerando')) return false;
+                            return true;
+                        }
+                    });
+
+                    const pdf = new jsPDF({
+                        orientation: 'landscape',
+                        unit: 'px',
+                        format: [element.offsetWidth * 2, element.offsetHeight * 2]
+                    })
+                    pdf.addImage(dataUrl, 'PNG', 0, 0, element.offsetWidth * 2, element.offsetHeight * 2)
+                    pdf.save('Relatorio_VoxGeo_Intencao_Votos.pdf')
+                }
+            } else if (activeTab === 'crm') {
+                const pdf = new jsPDF({ orientation: 'portrait' });
+
+                pdf.setFontSize(16);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text('Relatório Analítico - VoxGeo CRM', 14, 20);
+
+                pdf.setFontSize(11);
+                pdf.setFont('helvetica', 'normal');
+                pdf.text(`Volume de Respondentes Filtrados: ${crmData.length}`, 14, 28);
+
+                const tableData = crmData.map(v => {
+                    const ans = v.raw_data || v.respondent_data || {};
+                    const name = v.voter_name || ans['QUAL SEU NOME?'] || ans['Nome'] || ans['NOME'] || 'Anônimo';
+                    const phone = v.voter_whatsapp || ans['Whatsapp'] || ans['Telefone'] || ans['telefone'];
+
+                    const col1 = phone ? `${name}\n${phone}` : name;
+                    const col2 = String(v.id || '-');
+
+                    const respostasArr: string[] = [];
+                    Object.entries(ans).forEach(([k, val]) => {
+                        if (!val || typeof val !== 'string' || val.trim() === '') return;
+
+                        const keyLower = k.toLowerCase();
+                        if (keyLower.includes('whatsapp') || keyLower === 'nome' || keyLower === 'qual seu nome?') return;
+
+                        respostasArr.push(`${k}: ${val}`);
+                    });
+
+                    const col3 = respostasArr.join('\n');
+
+                    return [col1, col2, col3];
+                });
+
+                autoTable(pdf, {
+                    startY: 35,
+                    head: [['Nome / Contato', 'ID', 'Respostas da Pesquisa']],
+                    body: tableData,
+                    theme: 'striped',
+                    styles: {
+                        fontSize: 9,
+                        cellPadding: 4,
+                        overflow: 'linebreak'
+                    },
+                    headStyles: {
+                        fillColor: [30, 27, 75],
+                        textColor: 255,
+                        fontStyle: 'bold'
+                    },
+                    columnStyles: {
+                        0: { cellWidth: 50 },
+                        1: { cellWidth: 30 },
+                        2: { cellWidth: 'auto' }
                     }
                 });
 
-                const pdf = new jsPDF({
-                    orientation: 'landscape',
-                    unit: 'px',
-                    format: [element.offsetWidth * 2, element.offsetHeight * 2]
-                })
-                pdf.addImage(dataUrl, 'PNG', 0, 0, element.offsetWidth * 2, element.offsetHeight * 2)
-                pdf.save('Relatorio_VoxGeo_Intencao_Votos.pdf')
+                pdf.save('CRM_VoxGeo_Completo.pdf');
             }
         } catch (error: any) {
             console.error('Erro ao gerar PDF:', error)
