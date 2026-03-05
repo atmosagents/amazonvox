@@ -11,7 +11,7 @@ import {
     Legend
 } from 'chart.js'
 import { jsPDF } from 'jspdf'
-import html2canvas from 'html2canvas'
+import { toPng } from 'html-to-image'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -302,14 +302,22 @@ export default function DashboardPage() {
         try {
             const element = document.getElementById('pdf-report-container')
             if (element) {
-                const canvas = await html2canvas(element, { scale: 2, useCORS: true, allowTaint: true })
-                const imgData = canvas.toDataURL('image/png')
+                const dataUrl = await toPng(element, {
+                    cacheBust: true,
+                    pixelRatio: 2,
+                    backgroundColor: darkMode ? '#0F172A' : '#F8FAFC',
+                    filter: (node) => {
+                        if (node.tagName === 'BUTTON' && node.innerText && node.innerText.includes('Gerando')) return false;
+                        return true;
+                    }
+                });
+
                 const pdf = new jsPDF({
                     orientation: 'landscape',
                     unit: 'px',
-                    format: [canvas.width, canvas.height]
+                    format: [element.offsetWidth * 2, element.offsetHeight * 2]
                 })
-                pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height)
+                pdf.addImage(dataUrl, 'PNG', 0, 0, element.offsetWidth * 2, element.offsetHeight * 2)
                 pdf.save('Relatorio_VoxGeo_Intencao_Votos.pdf')
             }
         } catch (error: any) {
